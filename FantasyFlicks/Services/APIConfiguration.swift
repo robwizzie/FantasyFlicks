@@ -34,27 +34,46 @@ enum APIConfiguration {
             case profileLarge = "h632"
         }
 
-        /// Your TMDB API Access Token (Read Access Token, not API Key)
-        /// ⚠️ ADD YOUR TOKEN HERE - Get it from https://www.themoviedb.org/settings/api
-        /// This should be the "API Read Access Token" (starts with "eyJ...")
-        static var accessToken: String {
-            // Option 1: Hardcode for development (not recommended for production)
-            // return "YOUR_TMDB_ACCESS_TOKEN_HERE"
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                    TMDB API TOKEN SETUP                         ║
+        // ╠════════════════════════════════════════════════════════════════╣
+        // ║  1. Go to: https://www.themoviedb.org/settings/api             ║
+        // ║  2. Sign up or log in                                          ║
+        // ║  3. Copy the "API Read Access Token" (starts with "eyJ...")    ║
+        // ║  4. Paste it below where it says "PASTE YOUR TOKEN HERE"       ║
+        // ╚════════════════════════════════════════════════════════════════╝
 
-            // Option 2: Load from environment or config file (recommended)
-            if let token = ProcessInfo.processInfo.environment["TMDB_ACCESS_TOKEN"] {
+        static var accessToken: String {
+            // Check environment variable first (for CI/CD or Xcode scheme)
+            if let token = ProcessInfo.processInfo.environment["TMDB_ACCESS_TOKEN"],
+               !token.isEmpty {
                 return token
             }
 
-            // Option 3: Load from a plist or secrets file
+            // Check Secrets.plist (for production builds)
             if let path = Bundle.main.path(forResource: "Secrets", ofType: "plist"),
                let dict = NSDictionary(contentsOfFile: path),
-               let token = dict["TMDBAccessToken"] as? String {
+               let token = dict["TMDBAccessToken"] as? String,
+               !token.isEmpty,
+               token != "YOUR_TOKEN_HERE" {
                 return token
             }
 
-            // Fallback - replace this with your actual token for development
-            return "YOUR_TMDB_ACCESS_TOKEN_HERE"
+            // ┌──────────────────────────────────────────────────────────────┐
+            // │  ⬇️ PASTE YOUR TOKEN HERE (replace the placeholder below) ⬇️  │
+            // └──────────────────────────────────────────────────────────────┘
+            let developmentToken = "YOUR_TMDB_ACCESS_TOKEN_HERE"
+
+            return developmentToken
+        }
+
+        /// Check if a valid token is configured
+        static var hasValidToken: Bool {
+            let token = accessToken
+            return !token.isEmpty &&
+                   token != "YOUR_TMDB_ACCESS_TOKEN_HERE" &&
+                   token != "YOUR_TOKEN_HERE" &&
+                   token.hasPrefix("eyJ")
         }
 
         /// Build full image URL

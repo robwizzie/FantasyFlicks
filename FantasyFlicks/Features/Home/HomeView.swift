@@ -8,14 +8,13 @@
 import SwiftUI
 
 struct HomeView: View {
+    @StateObject private var viewModel = HomeViewModel()
     @State private var showNotifications = false
     @State private var animateHero = false
     @State private var scrollOffset: CGFloat = 0
 
-    // Sample data for preview
-    private let upcomingMovies = FFMovie.sampleMovies
-    private let activeLeagues = FFLeague.sampleLeagues
-    private let standings = FFTeamStanding.sampleStandings
+    // User leagues (placeholder until backend integration)
+    private let activeLeagues: [FFLeague] = []
 
     var body: some View {
         NavigationStack {
@@ -26,6 +25,11 @@ struct HomeView: View {
                 // Content
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: FFSpacing.xxl) {
+                        // API Token setup banner (if not configured)
+                        if !APIConfiguration.TMDB.hasValidToken {
+                            tokenSetupBanner
+                        }
+
                         // Hero section with logo
                         heroSection
 
@@ -38,18 +42,26 @@ struct HomeView: View {
                         // Your leagues
                         yourLeaguesSection
 
-                        // Upcoming movies carousel
+                        // Upcoming movies carousel (real data)
                         upcomingMoviesSection
 
-                        // Standings preview
-                        if !standings.isEmpty {
-                            standingsSection
+                        // Now playing movies (real data)
+                        if !viewModel.nowPlayingMovies.isEmpty {
+                            nowPlayingSection
                         }
 
                         // Bottom padding
                         Spacer(minLength: 100)
                     }
                     .padding(.top, FFSpacing.lg)
+                }
+                .refreshable {
+                    await viewModel.refresh()
+                }
+
+                // Loading overlay for initial load
+                if viewModel.isLoading && viewModel.upcomingMovies.isEmpty {
+                    loadingOverlay
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -62,15 +74,78 @@ struct HomeView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    IconButton(icon: "bell.fill", size: 36, style: .ghost) {
+                    Button {
                         showNotifications = true
+                    } label: {
+                        Image(systemName: "bell.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(FFColors.goldPrimary)
                     }
                 }
             }
             .sheet(isPresented: $showNotifications) {
                 NotificationsSheet()
             }
+            .task {
+                await viewModel.fetchHomeData()
+            }
+            .alert("Error", isPresented: .constant(viewModel.error != nil)) {
+                Button("OK") { viewModel.error = nil }
+            } message: {
+                Text(viewModel.error ?? "")
+            }
         }
+    }
+
+    private var loadingOverlay: some View {
+        VStack(spacing: FFSpacing.lg) {
+            ProgressView()
+                .scaleEffect(1.5)
+                .tint(FFColors.goldPrimary)
+            Text("Loading movies...")
+                .font(FFTypography.bodyMedium)
+                .foregroundColor(FFColors.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(FFColors.backgroundDark.opacity(0.8))
+    }
+
+    // MARK: - Token Setup Banner
+
+    private var tokenSetupBanner: some View {
+        VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack(spacing: FFSpacing.sm) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(FFColors.ruby)
+                Text("TMDB API Token Required")
+                    .font(FFTypography.labelMedium)
+                    .foregroundColor(FFColors.textPrimary)
+            }
+
+            Text("To see real movie data, add your TMDB API token:")
+                .font(FFTypography.bodySmall)
+                .foregroundColor(FFColors.textSecondary)
+
+            VStack(alignment: .leading, spacing: FFSpacing.xs) {
+                Text("1. Go to themoviedb.org/settings/api")
+                Text("2. Copy your API Read Access Token")
+                Text("3. Open APIConfiguration.swift")
+                Text("4. Paste it where indicated")
+            }
+            .font(FFTypography.caption)
+            .foregroundColor(FFColors.textTertiary)
+        }
+        .padding(FFSpacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                .fill(FFColors.backgroundElevated)
+                .overlay {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                        .stroke(FFColors.ruby.opacity(0.3), lineWidth: 1)
+                }
+        }
+        .padding(.horizontal)
     }
 
     // MARK: - Background
@@ -273,39 +348,89 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Upcoming Movies
+    // MARK: - Upcoming Movies (Real TMDB Data)
 
     private var upcomingMoviesSection: some View {
-        MovieCarousel(
-            title: "Upcoming Releases",
-            movies: upcomingMovies,
-            size: .medium,
-            onMovieTap: { movie in
-                // Navigate to movie detail
-            },
-            onSeeAllTap: {
-                // Navigate to movies tab
-            }
-        )
-    }
-
-    // MARK: - Standings
-
-    private var standingsSection: some View {
         VStack(alignment: .leading, spacing: FFSpacing.md) {
-            Text("Box Office Champions")
-                .font(FFTypography.headlineSmall)
-                .foregroundColor(FFColors.textPrimary)
-                .padding(.horizontal)
+            HStack {
+                Text("Upcoming Releases")
+                    .font(FFTypography.headlineSmall)
+                    .foregroundColor(FFColors.textPrimary)
 
-            StandingsCard(
-                standings: standings,
-                currentUserId: "user_001"
-            ) {
-                // Navigate to full standings
+                Spacer()
+
+                if viewModel.isLoadingUpcoming {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(FFColors.goldPrimary)
+                }
             }
             .padding(.horizontal)
+
+            if viewModel.upcomingMovies.isEmpty && !viewModel.isLoadingUpcoming {
+                emptyStateCard(message: "No upcoming movies found")
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: FFSpacing.md) {
+                        ForEach(viewModel.upcomingMovies) { movie in
+                            MoviePosterCard(movie: movie, size: .medium) {
+                                // Navigate to movie detail
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
         }
+    }
+
+    // MARK: - Now Playing Movies (Real TMDB Data)
+
+    private var nowPlayingSection: some View {
+        VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack {
+                Text("Now Playing")
+                    .font(FFTypography.headlineSmall)
+                    .foregroundColor(FFColors.textPrimary)
+
+                Spacer()
+
+                if viewModel.isLoadingNowPlaying {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(FFColors.goldPrimary)
+                }
+            }
+            .padding(.horizontal)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: FFSpacing.md) {
+                    ForEach(viewModel.nowPlayingMovies) { movie in
+                        MoviePosterCard(movie: movie, size: .medium) {
+                            // Navigate to movie detail
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    private func emptyStateCard(message: String) -> some View {
+        HStack {
+            Spacer()
+            VStack(spacing: FFSpacing.sm) {
+                Image(systemName: "film")
+                    .font(.system(size: 32))
+                    .foregroundColor(FFColors.textTertiary)
+                Text(message)
+                    .font(FFTypography.bodyMedium)
+                    .foregroundColor(FFColors.textSecondary)
+            }
+            .padding(.vertical, FFSpacing.xxl)
+            Spacer()
+        }
+        .padding(.horizontal)
     }
 }
 
