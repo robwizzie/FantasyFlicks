@@ -8,7 +8,7 @@
 import Foundation
 
 /// Represents a user's team within a specific league
-struct FFTeam: Codable, Identifiable, Hashable {
+struct FFTeam: Codable, Identifiable, Hashable, Sendable {
     let id: String
 
     /// The league this team belongs to
@@ -102,7 +102,7 @@ struct FFTeam: Codable, Identifiable, Hashable {
 
 // MARK: - Team Standing (for leaderboards)
 
-struct FFTeamStanding: Codable, Identifiable, Hashable {
+struct FFTeamStanding: Codable, Identifiable, Hashable, Sendable {
     var id: String { teamId }
 
     let teamId: String

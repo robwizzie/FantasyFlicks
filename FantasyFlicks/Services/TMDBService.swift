@@ -8,7 +8,8 @@
 import Foundation
 
 /// Service for fetching movie data from TMDB
-actor TMDBService {
+@MainActor
+final class TMDBService {
 
     // MARK: - Singleton
 
@@ -169,14 +170,14 @@ actor TMDBService {
 
 // MARK: - TMDB Response Models
 
-struct TMDBMovieListResponse: Codable {
+struct TMDBMovieListResponse: Codable, Sendable {
     let page: Int
     let results: [TMDBMovie]
     let totalPages: Int
     let totalResults: Int
 }
 
-struct TMDBMovie: Codable {
+struct TMDBMovie: Codable, Sendable {
     let id: Int
     let title: String
     let originalTitle: String?
@@ -193,7 +194,7 @@ struct TMDBMovie: Codable {
     let video: Bool?
 }
 
-struct TMDBMovieDetails: Codable {
+struct TMDBMovieDetails: Codable, Sendable {
     let id: Int
     let title: String
     let originalTitle: String?
@@ -216,25 +217,25 @@ struct TMDBMovieDetails: Codable {
     let imdbId: String?
 }
 
-struct TMDBGenre: Codable {
+struct TMDBGenre: Codable, Sendable {
     let id: Int
     let name: String
 }
 
-struct TMDBProductionCompany: Codable {
+struct TMDBProductionCompany: Codable, Sendable {
     let id: Int
     let name: String
     let logoPath: String?
     let originCountry: String?
 }
 
-struct TMDBCreditsResponse: Codable {
+struct TMDBCreditsResponse: Codable, Sendable {
     let id: Int
     let cast: [TMDBCastMember]
     let crew: [TMDBCrewMember]
 }
 
-struct TMDBCastMember: Codable {
+struct TMDBCastMember: Codable, Sendable {
     let id: Int
     let name: String
     let character: String?
@@ -242,7 +243,7 @@ struct TMDBCastMember: Codable {
     let order: Int?
 }
 
-struct TMDBCrewMember: Codable {
+struct TMDBCrewMember: Codable, Sendable {
     let id: Int
     let name: String
     let job: String?
@@ -250,12 +251,12 @@ struct TMDBCrewMember: Codable {
     let profilePath: String?
 }
 
-struct TMDBVideosResponse: Codable {
+struct TMDBVideosResponse: Codable, Sendable {
     let id: Int
     let results: [TMDBVideo]
 }
 
-struct TMDBVideo: Codable {
+struct TMDBVideo: Codable, Sendable {
     let id: String
     let key: String
     let name: String
@@ -268,16 +269,16 @@ struct TMDBVideo: Codable {
     }
 }
 
-struct TMDBGenresResponse: Codable {
+struct TMDBGenresResponse: Codable, Sendable {
     let genres: [TMDBGenre]
 }
 
-struct TMDBReleaseDatesResponse: Codable {
+struct TMDBReleaseDatesResponse: Codable, Sendable {
     let id: Int
     let results: [TMDBReleaseDateResult]
 }
 
-struct TMDBReleaseDateResult: Codable {
+struct TMDBReleaseDateResult: Codable, Sendable {
     let iso31661: String
     let releaseDates: [TMDBReleaseDate]
 
@@ -287,7 +288,7 @@ struct TMDBReleaseDateResult: Codable {
     }
 }
 
-struct TMDBReleaseDate: Codable {
+struct TMDBReleaseDate: Codable, Sendable {
     let certification: String?
     let releaseDate: Date?
     let type: Int? // 1=Premiere, 2=Theatrical (limited), 3=Theatrical, 4=Digital, 5=Physical, 6=TV

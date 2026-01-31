@@ -20,63 +20,61 @@ enum APIConfiguration {
         static let imageBaseURL = "https://image.tmdb.org/t/p"
 
         /// Image size presets
-        enum ImageSize: String {
-            case posterSmall = "w185"
-            case posterMedium = "w342"
-            case posterLarge = "w500"
-            case posterOriginal = "original"
-            case backdropSmall = "w300"
-            case backdropMedium = "w780"
-            case backdropLarge = "w1280"
-            case backdropOriginal = "original"
-            case profileSmall = "w45"
-            case profileMedium = "w185"
-            case profileLarge = "h632"
+        enum PosterSize: String {
+            case small = "w185"
+            case medium = "w342"
+            case large = "w500"
+            case original = "original"
         }
 
-        /// Your TMDB API Access Token (Read Access Token, not API Key)
-        /// ⚠️ ADD YOUR TOKEN HERE - Get it from https://www.themoviedb.org/settings/api
-        /// This should be the "API Read Access Token" (starts with "eyJ...")
-        static var accessToken: String {
-            // Option 1: Hardcode for development (not recommended for production)
-            // return "YOUR_TMDB_ACCESS_TOKEN_HERE"
-
-            // Option 2: Load from environment or config file (recommended)
-            if let token = ProcessInfo.processInfo.environment["TMDB_ACCESS_TOKEN"] {
-                return token
-            }
-
-            // Option 3: Load from a plist or secrets file
-            if let path = Bundle.main.path(forResource: "Secrets", ofType: "plist"),
-               let dict = NSDictionary(contentsOfFile: path),
-               let token = dict["TMDBAccessToken"] as? String {
-                return token
-            }
-
-            // Fallback - replace this with your actual token for development
-            return "YOUR_TMDB_ACCESS_TOKEN_HERE"
+        enum BackdropSize: String {
+            case small = "w300"
+            case medium = "w780"
+            case large = "w1280"
+            case original = "original"
         }
 
-        /// Build full image URL
-        static func imageURL(path: String?, size: ImageSize) -> URL? {
+        enum ProfileSize: String {
+            case small = "w45"
+            case medium = "w185"
+            case large = "h632"
+        }
+
+        /// TMDB API Access Token loaded from Secrets.plist
+        static let accessToken: String = {
+            guard let path = Bundle.main.path(forResource: "Secrets", ofType: "plist"),
+                  let dict = NSDictionary(contentsOfFile: path),
+                  let token = dict["TMDBAccessToken"] as? String else {
+                fatalError("Missing TMDBAccessToken in Secrets.plist - ensure Secrets.plist is added to the project")
+            }
+            return token
+        }()
+
+        /// Build full poster image URL
+        static func posterURL(path: String?, size: PosterSize = .medium) -> URL? {
+            guard let path = path else { return nil }
+            return URL(string: "\(imageBaseURL)/\(size.rawValue)\(path)")
+        }
+
+        /// Build full backdrop image URL
+        static func backdropURL(path: String?, size: BackdropSize = .medium) -> URL? {
+            guard let path = path else { return nil }
+            return URL(string: "\(imageBaseURL)/\(size.rawValue)\(path)")
+        }
+
+        /// Build full profile image URL
+        static func profileURL(path: String?, size: ProfileSize = .medium) -> URL? {
             guard let path = path else { return nil }
             return URL(string: "\(imageBaseURL)/\(size.rawValue)\(path)")
         }
     }
 
-    // MARK: - Request Timeout
-
-    /// Default timeout for API requests in seconds
-    static let requestTimeout: TimeInterval = 30
-
-    /// Timeout for image downloads
-    static let imageTimeout: TimeInterval = 60
 }
 
 // MARK: - API Endpoints
 
 /// TMDB API endpoints
-enum TMDBEndpoint {
+enum TMDBEndpoint: Sendable {
     case discover(year: Int, page: Int)
     case upcoming(page: Int)
     case nowPlaying(page: Int)

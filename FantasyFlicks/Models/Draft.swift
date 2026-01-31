@@ -8,7 +8,7 @@
 import Foundation
 
 /// Represents a draft session for a league
-struct FFDraft: Codable, Identifiable, Hashable {
+struct FFDraft: Codable, Identifiable, Hashable, Sendable {
     let id: String
 
     /// The league this draft belongs to
@@ -150,7 +150,7 @@ struct FFDraft: Codable, Identifiable, Hashable {
 // MARK: - Draft Pick
 
 /// Represents a single pick in the draft
-struct FFDraftPick: Codable, Identifiable, Hashable {
+struct FFDraftPick: Codable, Identifiable, Hashable, Sendable {
     let id: String
 
     /// The draft this pick belongs to
@@ -238,7 +238,7 @@ struct FFDraftPick: Codable, Identifiable, Hashable {
 // MARK: - Draft Board Cell
 
 /// Represents a cell in the visual draft board
-struct FFDraftBoardCell: Identifiable, Hashable {
+struct FFDraftBoardCell: Identifiable, Hashable, Sendable {
     var id: String { "\(round)-\(position)" }
 
     let round: Int

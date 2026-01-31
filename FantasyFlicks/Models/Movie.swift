@@ -8,7 +8,7 @@
 import Foundation
 
 /// Represents a movie available for drafting or already drafted
-struct FFMovie: Codable, Identifiable, Hashable {
+struct FFMovie: Codable, Identifiable, Hashable, Sendable {
     let id: String
 
     /// TMDB movie ID for API lookups
@@ -234,7 +234,7 @@ struct FFMovie: Codable, Identifiable, Hashable {
 
 // MARK: - Supporting Types
 
-enum MovieStatus: String, Codable {
+enum MovieStatus: String, Codable, Sendable {
     case rumored = "Rumored"
     case planned = "Planned"
     case inProduction = "In Production"
@@ -243,12 +243,12 @@ enum MovieStatus: String, Codable {
     case canceled = "Canceled"
 }
 
-struct Genre: Codable, Identifiable, Hashable {
+struct Genre: Codable, Identifiable, Hashable, Sendable {
     let id: Int
     let name: String
 }
 
-struct ProductionCompany: Codable, Identifiable, Hashable {
+struct ProductionCompany: Codable, Identifiable, Hashable, Sendable {
     let id: Int
     let name: String
     let logoPath: String?
@@ -260,7 +260,7 @@ struct ProductionCompany: Codable, Identifiable, Hashable {
     }
 }
 
-struct CastMember: Codable, Identifiable, Hashable {
+struct CastMember: Codable, Identifiable, Hashable, Sendable {
     let id: Int
     let name: String
     let character: String
@@ -273,7 +273,7 @@ struct CastMember: Codable, Identifiable, Hashable {
     }
 }
 
-struct CrewMember: Codable, Identifiable, Hashable {
+struct CrewMember: Codable, Identifiable, Hashable, Sendable {
     let id: Int
     let name: String
     let job: String
@@ -288,7 +288,7 @@ struct CrewMember: Codable, Identifiable, Hashable {
 
 // MARK: - Box Office Data
 
-struct BoxOfficeData: Codable, Hashable {
+struct BoxOfficeData: Codable, Hashable, Sendable {
     var domestic: Int?
     var international: Int?
     var worldwide: Int?
@@ -328,7 +328,7 @@ struct BoxOfficeData: Codable, Hashable {
 
 // MARK: - Rating Data
 
-struct RatingData: Codable, Hashable {
+struct RatingData: Codable, Hashable, Sendable {
     /// Rotten Tomatoes critic score (0-100)
     var rtCriticScore: Int?
 
