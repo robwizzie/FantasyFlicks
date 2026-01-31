@@ -8,7 +8,7 @@
 import Foundation
 
 /// Represents a trade proposal between two teams
-struct FFTrade: Codable, Identifiable, Hashable {
+struct FFTrade: Codable, Identifiable, Hashable, Sendable {
     let id: String
 
     /// League this trade is in
@@ -120,7 +120,7 @@ struct FFTrade: Codable, Identifiable, Hashable {
 
 // MARK: - Trade Status
 
-enum TradeStatus: String, Codable {
+enum TradeStatus: String, Codable, Sendable {
     case pending = "pending"         // Awaiting response from receiving team
     case accepted = "accepted"       // Accepted, in review period
     case rejected = "rejected"       // Rejected by receiving team
@@ -156,7 +156,7 @@ enum TradeStatus: String, Codable {
 
 // MARK: - Trade Notification
 
-struct FFTradeNotification: Codable, Identifiable {
+struct FFTradeNotification: Codable, Identifiable, Sendable {
     let id: String
     let tradeId: String
     let userId: String
@@ -165,7 +165,7 @@ struct FFTradeNotification: Codable, Identifiable {
     let createdAt: Date
     var isRead: Bool
 
-    enum TradeNotificationType: String, Codable {
+    enum TradeNotificationType: String, Codable, Sendable {
         case proposalReceived = "proposal_received"
         case proposalAccepted = "proposal_accepted"
         case proposalRejected = "proposal_rejected"

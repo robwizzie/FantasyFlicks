@@ -8,7 +8,7 @@
 import Foundation
 
 /// Represents an in-app notification
-struct FFNotification: Codable, Identifiable, Hashable {
+struct FFNotification: Codable, Identifiable, Hashable, Sendable {
     let id: String
 
     /// User receiving this notification
@@ -92,7 +92,7 @@ struct FFNotification: Codable, Identifiable, Hashable {
 
 // MARK: - Notification Type
 
-enum NotificationType: String, Codable {
+enum NotificationType: String, Codable, Sendable {
     // Draft notifications
     case draftStartingSoon = "draft_starting_soon"
     case draftStarted = "draft_started"

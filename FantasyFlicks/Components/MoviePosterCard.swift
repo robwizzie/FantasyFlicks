@@ -282,7 +282,7 @@ struct FeaturedMovieCard: View {
                         }
 
                         if let date = movie.releaseDate {
-                            Label(date, format: .dateTime.year())
+                            Text(date, format: .dateTime.year())
                                 .font(FFTypography.labelSmall)
                                 .foregroundColor(FFColors.textSecondary)
                         }

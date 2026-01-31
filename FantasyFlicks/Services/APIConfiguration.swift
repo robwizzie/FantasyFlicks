@@ -20,18 +20,11 @@ enum APIConfiguration {
         static let imageBaseURL = "https://image.tmdb.org/t/p"
 
         /// Image size presets
-        enum ImageSize: String {
-            case posterSmall = "w185"
-            case posterMedium = "w342"
-            case posterLarge = "w500"
-            case posterOriginal = "original"
-            case backdropSmall = "w300"
-            case backdropMedium = "w780"
-            case backdropLarge = "w1280"
-            case backdropOriginal = "original"
-            case profileSmall = "w45"
-            case profileMedium = "w185"
-            case profileLarge = "h632"
+        enum PosterSize: String {
+            case small = "w185"
+            case medium = "w342"
+            case large = "w500"
+            case original = "original"
         }
 
         // ╔════════════════════════════════════════════════════════════════╗
@@ -58,6 +51,8 @@ enum APIConfiguration {
                token != "YOUR_TOKEN_HERE" {
                 return token
             }
+            return token
+        }()
 
             // ┌──────────────────────────────────────────────────────────────┐
             // │  ⬇️ PASTE YOUR TOKEN HERE (replace the placeholder below) ⬇️  │
@@ -76,26 +71,25 @@ enum APIConfiguration {
                    token.hasPrefix("eyJ")
         }
 
-        /// Build full image URL
-        static func imageURL(path: String?, size: ImageSize) -> URL? {
+        /// Build full backdrop image URL
+        static func backdropURL(path: String?, size: BackdropSize = .medium) -> URL? {
+            guard let path = path else { return nil }
+            return URL(string: "\(imageBaseURL)/\(size.rawValue)\(path)")
+        }
+
+        /// Build full profile image URL
+        static func profileURL(path: String?, size: ProfileSize = .medium) -> URL? {
             guard let path = path else { return nil }
             return URL(string: "\(imageBaseURL)/\(size.rawValue)\(path)")
         }
     }
 
-    // MARK: - Request Timeout
-
-    /// Default timeout for API requests in seconds
-    static let requestTimeout: TimeInterval = 30
-
-    /// Timeout for image downloads
-    static let imageTimeout: TimeInterval = 60
 }
 
 // MARK: - API Endpoints
 
 /// TMDB API endpoints
-enum TMDBEndpoint {
+enum TMDBEndpoint: Sendable {
     case discover(year: Int, page: Int)
     case upcoming(page: Int)
     case nowPlaying(page: Int)

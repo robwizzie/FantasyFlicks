@@ -8,7 +8,7 @@
 import Foundation
 
 /// Represents a Fantasy Flicks league
-struct FFLeague: Codable, Identifiable, Hashable {
+struct FFLeague: Codable, Identifiable, Hashable, Sendable {
     let id: String
     var name: String
     var description: String?
@@ -117,7 +117,7 @@ struct FFLeague: Codable, Identifiable, Hashable {
 // MARK: - League Settings
 
 /// Configurable settings for a league
-struct LeagueSettings: Codable, Hashable {
+struct LeagueSettings: Codable, Hashable, Sendable {
 
     /// Type of draft order
     var draftType: DraftType
@@ -186,7 +186,7 @@ struct LeagueSettings: Codable, Hashable {
 
 // MARK: - Movie Filter Settings
 
-struct MovieFilterSettings: Codable, Hashable {
+struct MovieFilterSettings: Codable, Hashable, Sendable {
     /// Only include theatrical releases (no streaming-only)
     var theatricalOnly: Bool
 
@@ -214,7 +214,7 @@ struct MovieFilterSettings: Codable, Hashable {
 
 // MARK: - Enums
 
-enum DraftType: String, Codable, CaseIterable {
+enum DraftType: String, Codable, CaseIterable, Sendable {
     case fixed = "fixed"           // Same order every round
     case serpentine = "serpentine" // Snake draft (1-8, 8-1, 1-8...)
 
@@ -233,7 +233,7 @@ enum DraftType: String, Codable, CaseIterable {
     }
 }
 
-enum DraftOrderType: String, Codable, CaseIterable {
+enum DraftOrderType: String, Codable, CaseIterable, Sendable {
     case random = "random"
     case manual = "manual"
 
@@ -245,7 +245,7 @@ enum DraftOrderType: String, Codable, CaseIterable {
     }
 }
 
-enum ScoringMode: String, Codable, CaseIterable {
+enum ScoringMode: String, Codable, CaseIterable, Sendable {
     case boxOfficeDomestic = "box_office_domestic"
     case boxOfficeWorldwide = "box_office_worldwide"
     case ratingsRT = "ratings_rt"           // Rotten Tomatoes
@@ -277,7 +277,7 @@ enum ScoringMode: String, Codable, CaseIterable {
     }
 }
 
-enum ScoringDirection: String, Codable, CaseIterable {
+enum ScoringDirection: String, Codable, CaseIterable, Sendable {
     case highest = "highest" // Highest score wins
     case lowest = "lowest"   // Lowest score wins (for "sleeper" leagues)
 
@@ -289,7 +289,7 @@ enum ScoringDirection: String, Codable, CaseIterable {
     }
 }
 
-enum DraftStatus: String, Codable {
+enum DraftStatus: String, Codable, Sendable {
     case pending = "pending"       // Draft not yet started
     case scheduled = "scheduled"   // Draft time set
     case inProgress = "in_progress" // Draft currently happening

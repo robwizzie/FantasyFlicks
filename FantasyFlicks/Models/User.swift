@@ -8,7 +8,7 @@
 import Foundation
 
 /// Represents a user/player in Fantasy Flicks
-struct FFUser: Codable, Identifiable, Hashable {
+struct FFUser: Codable, Identifiable, Hashable, Sendable {
     let id: String
     var username: String
     var displayName: String
@@ -110,7 +110,7 @@ struct FFUser: Codable, Identifiable, Hashable {
 // MARK: - Achievement Model
 
 /// Represents an unlockable achievement
-struct FFAchievement: Codable, Identifiable, Hashable {
+struct FFAchievement: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let description: String
@@ -119,7 +119,7 @@ struct FFAchievement: Codable, Identifiable, Hashable {
     let pointsRequired: Int?
     let isSecret: Bool
 
-    enum AchievementCategory: String, Codable {
+    enum AchievementCategory: String, Codable, Sendable {
         case drafting    // Draft-related achievements
         case winning     // Victory achievements
         case social      // Friend/league achievements

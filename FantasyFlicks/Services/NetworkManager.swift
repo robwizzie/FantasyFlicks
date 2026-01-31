@@ -47,7 +47,8 @@ enum NetworkError: LocalizedError {
 }
 
 /// Network manager for making HTTP requests
-actor NetworkManager {
+@MainActor
+final class NetworkManager {
 
     // MARK: - Singleton
 
@@ -62,8 +63,8 @@ actor NetworkManager {
 
     private init() {
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = APIConfiguration.requestTimeout
-        configuration.timeoutIntervalForResource = APIConfiguration.imageTimeout
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 60
         configuration.waitsForConnectivity = true
 
         self.session = URLSession(configuration: configuration)
