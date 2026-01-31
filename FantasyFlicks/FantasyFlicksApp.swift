@@ -11,7 +11,8 @@ import SwiftUI
 struct FantasyFlicksApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MainTabView()
+                .ffTheme()
         }
     }
 }
