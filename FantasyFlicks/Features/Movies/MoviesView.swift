@@ -8,12 +8,11 @@
 import SwiftUI
 
 struct MoviesView: View {
+    @StateObject private var viewModel = MoviesViewModel()
     @State private var searchText = ""
-    @State private var selectedYear = Calendar.current.component(.year, from: Date())
-    @State private var selectedGenre: Int? = nil
     @State private var showFilters = false
+    @State private var selectedMovie: FFMovie?
 
-    private let movies = FFMovie.sampleMovies
     private let years = Array((2024...2027).reversed())
     private let genres = [
         (28, "Action"),
@@ -40,25 +39,76 @@ struct MoviesView: View {
                         // Genre filter
                         genreFilter
 
-                        // Featured movie
-                        if let featured = movies.first {
-                            FeaturedMovieCard(movie: featured) {
-                                // Navigate to detail
+                        // Search results or main content
+                        if !searchText.isEmpty {
+                            searchResultsSection
+                        } else {
+                            // Featured movie
+                            if let featured = viewModel.featuredMovie {
+                                FeaturedMovieCard(movie: featured) {
+                                    selectedMovie = featured
+                                }
+                                .padding(.horizontal)
                             }
-                            .padding(.horizontal)
+
+                            // Movie grid
+                            movieGrid
                         }
 
-                        // Movie grid
-                        movieGrid
+                        // Load more button
+                        if viewModel.canLoadMore && searchText.isEmpty {
+                            loadMoreButton
+                        }
 
                         Spacer(minLength: 100)
                     }
                     .padding(.vertical)
                 }
+                .refreshable {
+                    await viewModel.fetchMovies()
+                }
+
+                // Loading overlay
+                if viewModel.isLoading && viewModel.movies.isEmpty {
+                    loadingOverlay
+                }
             }
             .navigationTitle("Movies")
             .searchable(text: $searchText, prompt: "Search movies")
+            .onChange(of: searchText) { _, newValue in
+                Task {
+                    if newValue.isEmpty {
+                        viewModel.clearSearch()
+                    } else {
+                        try? await Task.sleep(nanoseconds: 300_000_000) // Debounce
+                        if searchText == newValue {
+                            await viewModel.searchMovies(query: newValue)
+                        }
+                    }
+                }
+            }
+            .task {
+                await viewModel.fetchMovies()
+            }
+            .sheet(item: $selectedMovie) { movie in
+                NavigationStack {
+                    MovieDetailView(movie: movie)
+                }
+            }
         }
+    }
+
+    private var loadingOverlay: some View {
+        VStack(spacing: FFSpacing.lg) {
+            ProgressView()
+                .scaleEffect(1.5)
+                .tint(FFColors.goldPrimary)
+            Text("Loading movies...")
+                .font(FFTypography.bodyMedium)
+                .foregroundColor(FFColors.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(FFColors.backgroundDark.opacity(0.8))
     }
 
     private var yearSelector: some View {
@@ -66,17 +116,17 @@ struct MoviesView: View {
             HStack(spacing: FFSpacing.sm) {
                 ForEach(years, id: \.self) { year in
                     Button {
-                        withAnimation(FFAnimations.snappy) {
-                            selectedYear = year
+                        Task {
+                            await viewModel.changeYear(year)
                         }
                     } label: {
                         Text("\(year)")
                             .font(FFTypography.labelMedium)
-                            .foregroundColor(selectedYear == year ? FFColors.backgroundDark : FFColors.textSecondary)
+                            .foregroundColor(viewModel.selectedYear == year ? FFColors.backgroundDark : FFColors.textSecondary)
                             .padding(.horizontal, FFSpacing.lg)
                             .padding(.vertical, FFSpacing.sm)
                             .background {
-                                if selectedYear == year {
+                                if viewModel.selectedYear == year {
                                     Capsule().fill(FFColors.goldGradientHorizontal)
                                 } else {
                                     Capsule()
@@ -95,18 +145,13 @@ struct MoviesView: View {
     private var genreFilter: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: FFSpacing.sm) {
-                // All genres
-                FilterChip(title: "All", isSelected: selectedGenre == nil) {
-                    withAnimation(FFAnimations.snappy) {
-                        selectedGenre = nil
-                    }
+                FilterChip(title: "All", isSelected: viewModel.selectedGenre == nil) {
+                    viewModel.selectedGenre = nil
                 }
 
                 ForEach(genres, id: \.0) { genre in
-                    FilterChip(title: genre.1, isSelected: selectedGenre == genre.0) {
-                        withAnimation(FFAnimations.snappy) {
-                            selectedGenre = genre.0
-                        }
+                    FilterChip(title: genre.1, isSelected: viewModel.selectedGenre == genre.0) {
+                        viewModel.selectedGenre = genre.0
                     }
                 }
             }
@@ -114,18 +159,124 @@ struct MoviesView: View {
         }
     }
 
-    private var movieGrid: some View {
-        LazyVGrid(columns: [
-            GridItem(.flexible(), spacing: FFSpacing.md),
-            GridItem(.flexible(), spacing: FFSpacing.md),
-            GridItem(.flexible(), spacing: FFSpacing.md)
-        ], spacing: FFSpacing.lg) {
-            ForEach(movies) { movie in
-                MoviePosterCard(movie: movie, size: .small) {
-                    // Navigate to detail
+    private var searchResultsSection: some View {
+        VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack {
+                Text("Search Results")
+                    .font(FFTypography.headlineSmall)
+                    .foregroundColor(FFColors.textPrimary)
+
+                if viewModel.isSearching {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(FFColors.goldPrimary)
                 }
             }
+            .padding(.horizontal)
+
+            if viewModel.searchResults.isEmpty && !viewModel.isSearching {
+                HStack {
+                    Spacer()
+                    VStack(spacing: FFSpacing.sm) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 32))
+                            .foregroundColor(FFColors.textTertiary)
+                        Text("No movies found")
+                            .font(FFTypography.bodyMedium)
+                            .foregroundColor(FFColors.textSecondary)
+                    }
+                    .padding(.vertical, FFSpacing.xxl)
+                    Spacer()
+                }
+            } else {
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: FFSpacing.md),
+                    GridItem(.flexible(), spacing: FFSpacing.md),
+                    GridItem(.flexible(), spacing: FFSpacing.md)
+                ], spacing: FFSpacing.lg) {
+                    ForEach(viewModel.searchResults) { movie in
+                        MoviePosterCard(movie: movie, size: .small) {
+                            selectedMovie = movie
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
         }
+    }
+
+    private var movieGrid: some View {
+        VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack {
+                Text("\(viewModel.selectedYear) Movies")
+                    .font(FFTypography.headlineSmall)
+                    .foregroundColor(FFColors.textPrimary)
+
+                Spacer()
+
+                if viewModel.isLoading && !viewModel.movies.isEmpty {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(FFColors.goldPrimary)
+                }
+            }
+            .padding(.horizontal)
+
+            if viewModel.filteredMovies().isEmpty && !viewModel.isLoading {
+                HStack {
+                    Spacer()
+                    VStack(spacing: FFSpacing.sm) {
+                        Image(systemName: "film")
+                            .font(.system(size: 32))
+                            .foregroundColor(FFColors.textTertiary)
+                        Text("No movies found for this filter")
+                            .font(FFTypography.bodyMedium)
+                            .foregroundColor(FFColors.textSecondary)
+                    }
+                    .padding(.vertical, FFSpacing.xxl)
+                    Spacer()
+                }
+            } else {
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: FFSpacing.md),
+                    GridItem(.flexible(), spacing: FFSpacing.md),
+                    GridItem(.flexible(), spacing: FFSpacing.md)
+                ], spacing: FFSpacing.lg) {
+                    ForEach(viewModel.filteredMovies()) { movie in
+                        MoviePosterCard(movie: movie, size: .small) {
+                            selectedMovie = movie
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    private var loadMoreButton: some View {
+        Button {
+            Task {
+                await viewModel.loadMoreMovies()
+            }
+        } label: {
+            HStack {
+                if viewModel.isLoadingMore {
+                    ProgressView()
+                        .tint(FFColors.goldPrimary)
+                } else {
+                    Text("Load More")
+                        .font(FFTypography.labelMedium)
+                }
+            }
+            .foregroundColor(FFColors.goldPrimary)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background {
+                RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                    .stroke(FFColors.goldPrimary, lineWidth: 1)
+            }
+        }
+        .disabled(viewModel.isLoadingMore)
         .padding(.horizontal)
     }
 }

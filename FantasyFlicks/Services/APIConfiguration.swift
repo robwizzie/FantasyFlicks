@@ -27,33 +27,48 @@ enum APIConfiguration {
             case original = "original"
         }
 
-        enum BackdropSize: String {
-            case small = "w300"
-            case medium = "w780"
-            case large = "w1280"
-            case original = "original"
-        }
+        // ╔════════════════════════════════════════════════════════════════╗
+        // ║                    TMDB API TOKEN SETUP                         ║
+        // ╠════════════════════════════════════════════════════════════════╣
+        // ║  1. Go to: https://www.themoviedb.org/settings/api             ║
+        // ║  2. Sign up or log in                                          ║
+        // ║  3. Copy the "API Read Access Token" (starts with "eyJ...")    ║
+        // ║  4. Paste it below where it says "PASTE YOUR TOKEN HERE"       ║
+        // ╚════════════════════════════════════════════════════════════════╝
 
-        enum ProfileSize: String {
-            case small = "w45"
-            case medium = "w185"
-            case large = "h632"
-        }
+        static var accessToken: String {
+            // Check environment variable first (for CI/CD or Xcode scheme)
+            if let token = ProcessInfo.processInfo.environment["TMDB_ACCESS_TOKEN"],
+               !token.isEmpty {
+                return token
+            }
 
-        /// TMDB API Access Token loaded from Secrets.plist
-        static let accessToken: String = {
-            guard let path = Bundle.main.path(forResource: "Secrets", ofType: "plist"),
-                  let dict = NSDictionary(contentsOfFile: path),
-                  let token = dict["TMDBAccessToken"] as? String else {
-                fatalError("Missing TMDBAccessToken in Secrets.plist - ensure Secrets.plist is added to the project")
+            // Check Secrets.plist (for production builds)
+            if let path = Bundle.main.path(forResource: "Secrets", ofType: "plist"),
+               let dict = NSDictionary(contentsOfFile: path),
+               let token = dict["TMDBAccessToken"] as? String,
+               !token.isEmpty,
+               token != "YOUR_TOKEN_HERE" {
+                return token
             }
             return token
         }()
 
-        /// Build full poster image URL
-        static func posterURL(path: String?, size: PosterSize = .medium) -> URL? {
-            guard let path = path else { return nil }
-            return URL(string: "\(imageBaseURL)/\(size.rawValue)\(path)")
+            // ┌──────────────────────────────────────────────────────────────┐
+            // │  ⬇️ PASTE YOUR TOKEN HERE (replace the placeholder below) ⬇️  │
+            // └──────────────────────────────────────────────────────────────┘
+            let developmentToken = "YOUR_TMDB_ACCESS_TOKEN_HERE"
+
+            return developmentToken
+        }
+
+        /// Check if a valid token is configured
+        static var hasValidToken: Bool {
+            let token = accessToken
+            return !token.isEmpty &&
+                   token != "YOUR_TMDB_ACCESS_TOKEN_HERE" &&
+                   token != "YOUR_TOKEN_HERE" &&
+                   token.hasPrefix("eyJ")
         }
 
         /// Build full backdrop image URL
