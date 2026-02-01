@@ -13,6 +13,7 @@ import CryptoKit
 import FirebaseAuth
 import FirebaseFirestore
 import GoogleSignIn
+import FirebaseCore
 
 /// Manages user authentication state and sign-in methods
 @MainActor
@@ -38,7 +39,19 @@ final class AuthenticationService: ObservableObject {
     // MARK: - Initialization
 
     private init() {
+        configureGoogleSignIn()
         setupAuthStateListener()
+    }
+
+    // MARK: - Google Sign In Configuration
+
+    private func configureGoogleSignIn() {
+        guard let clientID = FirebaseApp.app()?.options.clientID else {
+            print("Warning: Firebase client ID not found")
+            return
+        }
+        let config = GIDConfiguration(clientID: clientID)
+        GIDSignIn.sharedInstance.configuration = config
     }
 
     deinit {
@@ -129,6 +142,12 @@ final class AuthenticationService: ObservableObject {
 
         defer { isLoading = false }
 
+        // Verify Google Sign-In is configured
+        guard GIDSignIn.sharedInstance.configuration != nil else {
+            self.error = "Google Sign-In is not configured. Please ensure GoogleService-Info.plist is added to the project."
+            throw AuthError.configurationMissing
+        }
+
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController else {
             throw AuthError.noRootViewController
@@ -149,6 +168,18 @@ final class AuthenticationService: ObservableObject {
             let authResult = try await Auth.auth().signIn(with: credential)
             await fetchOrCreateUser(firebaseUser: authResult.user)
 
+        } catch let signInError as GIDSignInError {
+            // Handle specific Google Sign-In errors
+            switch signInError.code {
+            case .canceled:
+                // User canceled, don't show error
+                break
+            case .hasNoAuthInKeychain:
+                self.error = "No previous sign-in found. Please sign in again."
+            default:
+                self.error = signInError.localizedDescription
+            }
+            throw signInError
         } catch {
             self.error = error.localizedDescription
             throw error
@@ -174,7 +205,14 @@ final class AuthenticationService: ObservableObject {
         let userId = firebaseUser.uid
 
         do {
-            let document = try await db.collection("users").document(userId).getDocument()
+            // Try to get from server first, fall back to cache if offline
+            let document: DocumentSnapshot
+            do {
+                document = try await db.collection("users").document(userId).getDocument(source: .server)
+            } catch {
+                // If server fails (offline), try cache
+                document = try await db.collection("users").document(userId).getDocument(source: .cache)
+            }
 
             if document.exists, let data = document.data() {
                 // User exists, decode it - extract values first to help compiler
@@ -201,56 +239,73 @@ final class AuthenticationService: ObservableObject {
                     friendIds: data["friendIds"] as? [String] ?? [],
                     blockedUserIds: data["blockedUserIds"] as? [String] ?? []
                 )
+                isAuthenticated = true
             } else {
-                // Create new user
-                let newUsername = firebaseUser.displayName ?? "User\(String(userId.prefix(4)))"
-                let newDisplayName = firebaseUser.displayName ?? "New User"
-                let newEmail = email ?? firebaseUser.email ?? ""
-
-                let newUser = FFUser(
-                    id: userId,
-                    username: newUsername,
-                    displayName: newDisplayName,
-                    email: newEmail,
-                    avatarURL: firebaseUser.photoURL,
-                    totalLeagues: 0,
-                    leaguesWon: 0,
-                    totalMoviesDrafted: 0,
-                    bestMovieScore: nil,
-                    rankingPoints: 0,
-                    achievementIds: [],
-                    notificationsEnabled: true,
-                    draftReminderMinutes: 30,
-                    friendIds: [],
-                    blockedUserIds: []
-                )
-
-                // Save to Firestore
-                try await db.collection("users").document(userId).setData([
-                    "username": newUser.username,
-                    "displayName": newUser.displayName,
-                    "email": newUser.email,
-                    "avatarURL": newUser.avatarURL?.absoluteString as Any,
-                    "totalLeagues": newUser.totalLeagues,
-                    "leaguesWon": newUser.leaguesWon,
-                    "totalMoviesDrafted": newUser.totalMoviesDrafted,
-                    "rankingPoints": newUser.rankingPoints,
-                    "friendIds": newUser.friendIds,
-                    "blockedUserIds": newUser.blockedUserIds,
-                    "achievementIds": newUser.achievementIds,
-                    "notificationsEnabled": newUser.notificationsEnabled,
-                    "draftReminderMinutes": newUser.draftReminderMinutes,
-                    "createdAt": FieldValue.serverTimestamp()
-                ])
-
-                currentUser = newUser
+                // Create new user - requires network
+                await createNewUser(firebaseUser: firebaseUser, email: email)
             }
 
-            isAuthenticated = true
-
         } catch {
-            self.error = "Failed to load user data: \(error.localizedDescription)"
+            // If both server and cache fail, create a local-only user for new sign-ups
+            // or show error for existing users
+            if firebaseUser.metadata.creationDate == firebaseUser.metadata.lastSignInDate {
+                // New user - create locally and sync later
+                await createNewUser(firebaseUser: firebaseUser, email: email)
+            } else {
+                self.error = "Unable to load user data. Please check your connection and try again."
+            }
         }
+    }
+
+    private func createNewUser(firebaseUser: User, email: String?) async {
+        let userId = firebaseUser.uid
+        let newUsername = firebaseUser.displayName ?? "User\(String(userId.prefix(4)))"
+        let newDisplayName = firebaseUser.displayName ?? "New User"
+        let newEmail = email ?? firebaseUser.email ?? ""
+
+        let newUser = FFUser(
+            id: userId,
+            username: newUsername,
+            displayName: newDisplayName,
+            email: newEmail,
+            avatarURL: firebaseUser.photoURL,
+            totalLeagues: 0,
+            leaguesWon: 0,
+            totalMoviesDrafted: 0,
+            bestMovieScore: nil,
+            rankingPoints: 0,
+            achievementIds: [],
+            notificationsEnabled: true,
+            draftReminderMinutes: 30,
+            friendIds: [],
+            blockedUserIds: []
+        )
+
+        // Try to save to Firestore (will queue if offline)
+        do {
+            try await db.collection("users").document(userId).setData([
+                "username": newUser.username,
+                "displayName": newUser.displayName,
+                "email": newUser.email,
+                "avatarURL": newUser.avatarURL?.absoluteString as Any,
+                "totalLeagues": newUser.totalLeagues,
+                "leaguesWon": newUser.leaguesWon,
+                "totalMoviesDrafted": newUser.totalMoviesDrafted,
+                "rankingPoints": newUser.rankingPoints,
+                "friendIds": newUser.friendIds,
+                "blockedUserIds": newUser.blockedUserIds,
+                "achievementIds": newUser.achievementIds,
+                "notificationsEnabled": newUser.notificationsEnabled,
+                "draftReminderMinutes": newUser.draftReminderMinutes,
+                "createdAt": FieldValue.serverTimestamp()
+            ])
+        } catch {
+            // Firestore will sync when back online
+            print("User data will sync when online: \(error.localizedDescription)")
+        }
+
+        currentUser = newUser
+        isAuthenticated = true
     }
 
     // MARK: - Helper Methods
@@ -290,6 +345,7 @@ enum AuthError: LocalizedError {
     case invalidToken
     case noRootViewController
     case userNotFound
+    case configurationMissing
 
     var errorDescription: String? {
         switch self {
@@ -301,6 +357,8 @@ enum AuthError: LocalizedError {
             return "Unable to present sign-in. Please try again."
         case .userNotFound:
             return "User not found. Please sign in again."
+        case .configurationMissing:
+            return "Authentication is not properly configured. Please contact support."
         }
     }
 }

@@ -86,7 +86,7 @@ struct LeaguesView: View {
                 }
             }
             .sheet(isPresented: $showCreateLeague) {
-                CreateLeagueSheet(viewModel: viewModel)
+                CreateLeagueFlow(viewModel: viewModel)
             }
             .sheet(isPresented: $showJoinLeague) {
                 JoinLeagueSheet(viewModel: viewModel)
