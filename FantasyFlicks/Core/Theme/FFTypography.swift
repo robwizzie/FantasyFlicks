@@ -3,48 +3,52 @@
 //  FantasyFlicks
 //
 //  Fantasy Flicks Typography System
-//  Premium, cinematic feel with SF Pro Display for headers and SF Pro Text for body
+//  Premium, cinematic feel with elegant serif fonts for display and clean sans-serif for body
 //
 
 import SwiftUI
 
-/// Fantasy Flicks typography system - clean, modern, premium fonts
+/// Fantasy Flicks typography system - elegant, premium, cinematic fonts
 public struct FFTypography {
 
     // MARK: - Display Fonts (Headlines, Hero Text)
+    // Using serif design for a premium, cinematic feel
 
     /// Extra large display - splash screens, hero sections
-    public static let displayLarge = Font.system(size: 48, weight: .bold, design: .default)
+    public static let displayLarge = Font.system(size: 48, weight: .bold, design: .serif)
 
     /// Large display - screen titles
-    public static let displayMedium = Font.system(size: 36, weight: .bold, design: .default)
+    public static let displayMedium = Font.system(size: 36, weight: .bold, design: .serif)
 
     /// Small display - section headers
-    public static let displaySmall = Font.system(size: 28, weight: .semibold, design: .default)
+    public static let displaySmall = Font.system(size: 28, weight: .semibold, design: .serif)
 
     // MARK: - Headlines
+    // Serif for elegance with good readability
 
     /// Primary headline
-    public static let headlineLarge = Font.system(size: 24, weight: .semibold, design: .default)
+    public static let headlineLarge = Font.system(size: 24, weight: .semibold, design: .serif)
 
     /// Secondary headline
-    public static let headlineMedium = Font.system(size: 20, weight: .semibold, design: .default)
+    public static let headlineMedium = Font.system(size: 20, weight: .semibold, design: .serif)
 
     /// Tertiary headline
-    public static let headlineSmall = Font.system(size: 18, weight: .semibold, design: .default)
+    public static let headlineSmall = Font.system(size: 18, weight: .semibold, design: .serif)
 
     // MARK: - Title Fonts
+    // Clean sans-serif for modern titles
 
     /// Large title - card headers
-    public static let titleLarge = Font.system(size: 22, weight: .medium, design: .default)
+    public static let titleLarge = Font.system(size: 22, weight: .semibold, design: .rounded)
 
     /// Medium title - list items
-    public static let titleMedium = Font.system(size: 18, weight: .medium, design: .default)
+    public static let titleMedium = Font.system(size: 18, weight: .medium, design: .rounded)
 
     /// Small title - compact elements
-    public static let titleSmall = Font.system(size: 16, weight: .medium, design: .default)
+    public static let titleSmall = Font.system(size: 16, weight: .medium, design: .rounded)
 
     // MARK: - Body Fonts
+    // Default design for optimal readability
 
     /// Large body text - main content
     public static let bodyLarge = Font.system(size: 17, weight: .regular, design: .default)
@@ -58,10 +62,10 @@ public struct FFTypography {
     // MARK: - Label Fonts
 
     /// Large label - buttons, tabs
-    public static let labelLarge = Font.system(size: 16, weight: .semibold, design: .default)
+    public static let labelLarge = Font.system(size: 16, weight: .semibold, design: .rounded)
 
     /// Medium label - chips, tags
-    public static let labelMedium = Font.system(size: 14, weight: .medium, design: .default)
+    public static let labelMedium = Font.system(size: 14, weight: .medium, design: .rounded)
 
     /// Small label - captions, metadata
     public static let labelSmall = Font.system(size: 12, weight: .medium, design: .default)
@@ -82,6 +86,18 @@ public struct FFTypography {
 
     /// Overline text - section labels
     public static let overline = Font.system(size: 10, weight: .semibold, design: .default)
+
+    // MARK: - Premium Display Fonts
+    // Extra elegant variants for special moments
+
+    /// Hero title - app name, major headlines
+    public static let hero = Font.system(size: 42, weight: .bold, design: .serif)
+
+    /// Elegant subtitle
+    public static let elegantSubtitle = Font.system(size: 18, weight: .regular, design: .serif)
+
+    /// Movie title style
+    public static let movieTitle = Font.system(size: 14, weight: .semibold, design: .serif)
 }
 
 // MARK: - Text Style Modifiers
