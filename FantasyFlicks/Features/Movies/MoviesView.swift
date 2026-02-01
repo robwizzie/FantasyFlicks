@@ -55,11 +55,6 @@ struct MoviesView: View {
                             movieGrid
                         }
 
-                        // Load more button
-                        if viewModel.canLoadMore && searchText.isEmpty {
-                            loadMoreButton
-                        }
-
                         Spacer(minLength: 100)
                     }
                     .padding(.vertical)
@@ -120,7 +115,7 @@ struct MoviesView: View {
                             await viewModel.changeYear(year)
                         }
                     } label: {
-                        Text("\(year)")
+                        Text(String(year))
                             .font(FFTypography.labelMedium)
                             .foregroundColor(viewModel.selectedYear == year ? FFColors.backgroundDark : FFColors.textSecondary)
                             .padding(.horizontal, FFSpacing.lg)
@@ -208,7 +203,7 @@ struct MoviesView: View {
     private var movieGrid: some View {
         VStack(alignment: .leading, spacing: FFSpacing.md) {
             HStack {
-                Text("\(viewModel.selectedYear) Movies")
+                Text("\(String(viewModel.selectedYear)) Movies")
                     .font(FFTypography.headlineSmall)
                     .foregroundColor(FFColors.textPrimary)
 
@@ -246,38 +241,32 @@ struct MoviesView: View {
                         MoviePosterCard(movie: movie, size: .small) {
                             selectedMovie = movie
                         }
+                        .onAppear {
+                            // Trigger load more when reaching last few items
+                            let movies = viewModel.filteredMovies()
+                            if let index = movies.firstIndex(where: { $0.id == movie.id }),
+                               index >= movies.count - 3 {
+                                Task {
+                                    await viewModel.loadMoreMovies()
+                                }
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal)
-            }
-        }
-    }
 
-    private var loadMoreButton: some View {
-        Button {
-            Task {
-                await viewModel.loadMoreMovies()
-            }
-        } label: {
-            HStack {
+                // Loading indicator for infinite scroll
                 if viewModel.isLoadingMore {
-                    ProgressView()
-                        .tint(FFColors.goldPrimary)
-                } else {
-                    Text("Load More")
-                        .font(FFTypography.labelMedium)
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .tint(FFColors.goldPrimary)
+                        Spacer()
+                    }
+                    .padding(.vertical, FFSpacing.lg)
                 }
             }
-            .foregroundColor(FFColors.goldPrimary)
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background {
-                RoundedRectangle(cornerRadius: FFCornerRadius.medium)
-                    .stroke(FFColors.goldPrimary, lineWidth: 1)
-            }
         }
-        .disabled(viewModel.isLoadingMore)
-        .padding(.horizontal)
     }
 }
 
@@ -337,7 +326,7 @@ struct MovieDetailView: View {
 
                                 HStack(spacing: FFSpacing.md) {
                                     if let year = movie.year {
-                                        Text("\(year)")
+                                        Text(String(year))
                                             .font(FFTypography.labelSmall)
                                             .foregroundColor(FFColors.textSecondary)
                                     }

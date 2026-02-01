@@ -12,9 +12,10 @@ struct HomeView: View {
     @State private var showNotifications = false
     @State private var animateHero = false
     @State private var scrollOffset: CGFloat = 0
+    @State private var selectedMovie: FFMovie?
 
-    // User leagues (placeholder until backend integration)
-    private let activeLeagues: [FFLeague] = []
+    // User leagues from Firebase
+    private var activeLeagues: [FFLeague] { viewModel.userLeagues }
 
     var body: some View {
         NavigationStack {
@@ -85,6 +86,11 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showNotifications) {
                 NotificationsSheet()
+            }
+            .sheet(item: $selectedMovie) { movie in
+                NavigationStack {
+                    MovieDetailView(movie: movie)
+                }
             }
             .task {
                 await viewModel.fetchHomeData()
@@ -194,9 +200,9 @@ struct HomeView: View {
 
             // Stats overview
             HStack(spacing: FFSpacing.xl) {
-                StatBubble(value: "3", label: "Leagues", icon: "trophy.fill")
-                StatBubble(value: "12", label: "Movies", icon: "film.fill")
-                StatBubble(value: "#2", label: "Best Rank", icon: "medal.fill")
+                StatBubble(value: "\(viewModel.totalLeagues)", label: "Leagues", icon: "trophy.fill")
+                StatBubble(value: "\(viewModel.totalMoviesDrafted)", label: "Movies", icon: "film.fill")
+                StatBubble(value: viewModel.bestRank > 0 ? "#\(viewModel.bestRank)" : "-", label: "Best Rank", icon: "medal.fill")
             }
             .opacity(animateHero ? 1 : 0)
             .offset(y: animateHero ? 0 : 30)
@@ -213,9 +219,7 @@ struct HomeView: View {
 
     private var activeDraftBanner: some View {
         Group {
-            // Show if there's an active draft
-            let activeLeague = activeLeagues.first { $0.draftStatus == .inProgress }
-            if activeLeague != nil {
+            if let activeDraft = viewModel.activeDraft {
                 Button {
                     // Navigate to draft
                 } label: {
@@ -241,7 +245,7 @@ struct HomeView: View {
                                 .font(FFTypography.labelMedium)
                                 .foregroundColor(FFColors.textPrimary)
 
-                            Text("Sleeper Hits - Your turn to pick!")
+                            Text("\(activeDraft.leagueName) - \(activeDraft.isYourTurn ? "Your turn to pick!" : "Round \(activeDraft.currentRound)")")
                                 .font(FFTypography.caption)
                                 .foregroundColor(FFColors.textSecondary)
                         }
@@ -374,7 +378,7 @@ struct HomeView: View {
                     HStack(spacing: FFSpacing.md) {
                         ForEach(viewModel.upcomingMovies) { movie in
                             MoviePosterCard(movie: movie, size: .medium) {
-                                // Navigate to movie detail
+                                selectedMovie = movie
                             }
                         }
                     }
@@ -407,7 +411,7 @@ struct HomeView: View {
                 HStack(spacing: FFSpacing.md) {
                     ForEach(viewModel.nowPlayingMovies) { movie in
                         MoviePosterCard(movie: movie, size: .medium) {
-                            // Navigate to movie detail
+                            selectedMovie = movie
                         }
                     }
                 }

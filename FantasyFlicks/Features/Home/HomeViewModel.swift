@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import Combine
+import FirebaseFirestore
 
 @MainActor
 final class HomeViewModel: ObservableObject {
@@ -18,13 +20,79 @@ final class HomeViewModel: ObservableObject {
     @Published var isLoadingNowPlaying = false
     @Published var error: String?
 
-    // User leagues (would come from backend/local storage in full implementation)
+    // User leagues from Firestore
     @Published var userLeagues: [FFLeague] = []
+    @Published var activeDraft: ActiveDraftInfo?
 
-    // Stats (would be calculated from real data)
+    // Real stats from user profile
     @Published var totalLeagues = 0
     @Published var totalMoviesDrafted = 0
     @Published var bestRank = 0
+    @Published var leaguesWon = 0
+
+    // MARK: - Private Properties
+
+    private let db = Firestore.firestore()
+    private let authService = AuthenticationService.shared
+    private var leaguesListener: ListenerRegistration?
+
+    // MARK: - Types
+
+    struct ActiveDraftInfo {
+        let leagueId: String
+        let leagueName: String
+        let isYourTurn: Bool
+        let currentRound: Int
+        let currentPick: Int
+    }
+
+    // MARK: - Initialization
+
+    init() {
+        setupLeaguesListener()
+    }
+
+    deinit {
+        leaguesListener?.remove()
+    }
+
+    // MARK: - Real-time Listener
+
+    private func setupLeaguesListener() {
+        guard let userId = authService.currentUser?.id else { return }
+
+        leaguesListener = db.collection("leagues")
+            .whereField("memberIds", arrayContains: userId)
+            .addSnapshotListener { [weak self] snapshot, error in
+                Task { @MainActor in
+                    guard let self = self else { return }
+
+                    if let error = error {
+                        print("Error fetching leagues: \(error)")
+                        return
+                    }
+
+                    guard let documents = snapshot?.documents else { return }
+
+                    self.userLeagues = documents.compactMap { doc -> FFLeague? in
+                        self.parseLeague(from: doc)
+                    }
+
+                    // Check for active drafts
+                    if let activeDraftLeague = self.userLeagues.first(where: { $0.draftStatus == .inProgress }) {
+                        self.activeDraft = ActiveDraftInfo(
+                            leagueId: activeDraftLeague.id,
+                            leagueName: activeDraftLeague.name,
+                            isYourTurn: false, // Would need draft data to determine
+                            currentRound: 1,
+                            currentPick: 1
+                        )
+                    } else {
+                        self.activeDraft = nil
+                    }
+                }
+            }
+    }
 
     // MARK: - Public Methods
 
@@ -33,6 +101,51 @@ final class HomeViewModel: ObservableObject {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.fetchUpcomingMovies() }
             group.addTask { await self.fetchNowPlayingMovies() }
+            group.addTask { await self.fetchUserStats() }
+        }
+    }
+
+    /// Fetch user stats from Firebase
+    func fetchUserStats() async {
+        guard let user = authService.currentUser else {
+            // Use default values
+            totalLeagues = 0
+            totalMoviesDrafted = 0
+            bestRank = 0
+            leaguesWon = 0
+            return
+        }
+
+        // Get real stats from user
+        totalLeagues = user.totalLeagues
+        totalMoviesDrafted = user.totalMoviesDrafted
+        leaguesWon = user.leaguesWon
+
+        // Calculate best rank if we have leagues won
+        if user.leaguesWon > 0 {
+            bestRank = 1 // If they've won, their best rank is #1
+        } else if user.totalLeagues > 0 {
+            // Estimate based on ranking points (higher points = better rank)
+            let pointsPerLeague = user.rankingPoints / max(1, user.totalLeagues)
+            if pointsPerLeague > 500 {
+                bestRank = 2
+            } else if pointsPerLeague > 200 {
+                bestRank = 3
+            } else {
+                bestRank = 4
+            }
+        }
+
+        // Also try to fetch fresh data from Firestore
+        do {
+            let doc = try await db.collection("users").document(user.id).getDocument()
+            if let data = doc.data() {
+                totalLeagues = data["totalLeagues"] as? Int ?? totalLeagues
+                totalMoviesDrafted = data["totalMoviesDrafted"] as? Int ?? totalMoviesDrafted
+                leaguesWon = data["leaguesWon"] as? Int ?? leaguesWon
+            }
+        } catch {
+            // Use cached values if fetch fails
         }
     }
 
@@ -87,5 +200,31 @@ final class HomeViewModel: ObservableObject {
     /// Check if any data is loading
     var isLoading: Bool {
         isLoadingUpcoming || isLoadingNowPlaying
+    }
+
+    // MARK: - Helper Methods
+
+    private func parseLeague(from document: DocumentSnapshot) -> FFLeague? {
+        guard let data = document.data() else { return nil }
+
+        let settingsData = data["settings"] as? [String: Any] ?? [:]
+        let settings = LeagueSettings(
+            draftType: DraftType(rawValue: settingsData["draftType"] as? String ?? "") ?? .serpentine,
+            scoringMode: ScoringMode(rawValue: settingsData["scoringMode"] as? String ?? "") ?? .boxOfficeWorldwide,
+            moviesPerPlayer: settingsData["moviesPerPlayer"] as? Int ?? 5
+        )
+
+        return FFLeague(
+            id: document.documentID,
+            name: data["name"] as? String ?? "Unknown League",
+            description: data["description"] as? String,
+            settings: settings,
+            commissionerId: data["commissionerId"] as? String ?? "",
+            memberIds: data["memberIds"] as? [String] ?? [],
+            maxMembers: data["maxMembers"] as? Int ?? 8,
+            inviteCode: data["inviteCode"] as? String ?? "",
+            draftStatus: DraftStatus(rawValue: data["draftStatus"] as? String ?? "") ?? .pending,
+            seasonYear: data["seasonYear"] as? Int ?? Calendar.current.component(.year, from: Date())
+        )
     }
 }

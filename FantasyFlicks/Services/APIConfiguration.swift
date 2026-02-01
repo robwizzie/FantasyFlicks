@@ -27,15 +27,24 @@ enum APIConfiguration {
             case original = "original"
         }
 
-        // ╔════════════════════════════════════════════════════════════════╗
-        // ║                    TMDB API TOKEN SETUP                         ║
-        // ╠════════════════════════════════════════════════════════════════╣
-        // ║  1. Go to: https://www.themoviedb.org/settings/api             ║
-        // ║  2. Sign up or log in                                          ║
-        // ║  3. Copy the "API Read Access Token" (starts with "eyJ...")    ║
-        // ║  4. Paste it below where it says "PASTE YOUR TOKEN HERE"       ║
-        // ╚════════════════════════════════════════════════════════════════╝
+        enum BackdropSize: String {
+            case small = "w300"
+            case medium = "w780"
+            case large = "w1280"
+            case original = "original"
+        }
 
+        enum ProfileSize: String {
+            case small = "w45"
+            case medium = "w185"
+            case large = "h632"
+            case original = "original"
+        }
+
+        /// TMDB API Key
+        static let apiKey = "88297f6abebf50ca9a4130bb8a073344"
+
+        /// TMDB API Read Access Token (Bearer token)
         static var accessToken: String {
             // Check environment variable first (for CI/CD or Xcode scheme)
             if let token = ProcessInfo.processInfo.environment["TMDB_ACCESS_TOKEN"],
@@ -51,15 +60,9 @@ enum APIConfiguration {
                token != "YOUR_TOKEN_HERE" {
                 return token
             }
-            return token
-        }()
 
-            // ┌──────────────────────────────────────────────────────────────┐
-            // │  ⬇️ PASTE YOUR TOKEN HERE (replace the placeholder below) ⬇️  │
-            // └──────────────────────────────────────────────────────────────┘
-            let developmentToken = "YOUR_TMDB_ACCESS_TOKEN_HERE"
-
-            return developmentToken
+            // Development token
+            return "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI4ODI5N2Y2YWJlYmY1MGNhOWE0MTMwYmI4YTA3MzM0NCIsIm5iZiI6MTc2OTg5MTEzMi4yNzEwMDAxLCJzdWIiOiI2OTdlNjUzYzQ5OThmNzliNDIwZTcyM2MiLCJzY29wZXMiOlsiYXBpX3JlYWQiXSwidmVyc2lvbiI6MX0.1O3HpZOfrWPfOWjas0c61wDum4VsQxhLE2uN7H05iSw"
         }
 
         /// Check if a valid token is configured

@@ -8,36 +8,50 @@
 import SwiftUI
 
 struct ProfileView: View {
+    @StateObject private var viewModel = ProfileViewModel()
     @State private var showSettings = false
     @State private var showEditProfile = false
-
-    private let user = FFUser.sample
 
     var body: some View {
         NavigationStack {
             ZStack {
                 FFColors.backgroundDark.ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: FFSpacing.xl) {
-                        // Profile header
-                        profileHeader
+                if let user = viewModel.user {
+                    ScrollView {
+                        VStack(spacing: FFSpacing.xl) {
+                            // Profile header
+                            profileHeader(user: user)
 
-                        // Stats
-                        statsSection
+                            // Stats
+                            statsSection(user: user)
 
-                        // Achievements
-                        achievementsSection
+                            // Achievements
+                            achievementsSection
 
-                        // Recent activity
-                        recentActivitySection
+                            // Recent activity
+                            recentActivitySection
 
-                        // Settings links
-                        settingsSection
+                            // Settings links
+                            settingsSection
 
-                        Spacer(minLength: 100)
+                            Spacer(minLength: 100)
+                        }
+                        .padding(.vertical)
                     }
-                    .padding(.vertical)
+                    .refreshable {
+                        await viewModel.refreshProfile()
+                    }
+                } else {
+                    // Loading state
+                    VStack(spacing: FFSpacing.lg) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .tint(FFColors.goldPrimary)
+                        Text("Loading profile...")
+                            .font(FFTypography.bodyMedium)
+                            .foregroundColor(FFColors.textSecondary)
+                    }
                 }
             }
             .navigationTitle("Profile")
@@ -52,12 +66,22 @@ struct ProfileView: View {
                 }
             }
             .sheet(isPresented: $showSettings) {
-                SettingsSheet()
+                SettingsSheet(viewModel: viewModel)
+            }
+            .sheet(isPresented: $showEditProfile) {
+                if let user = viewModel.user {
+                    EditProfileSheet(viewModel: viewModel, user: user)
+                }
+            }
+            .alert("Error", isPresented: .constant(viewModel.error != nil)) {
+                Button("OK") { viewModel.clearMessages() }
+            } message: {
+                Text(viewModel.error ?? "")
             }
         }
     }
 
-    private var profileHeader: some View {
+    private func profileHeader(user: FFUser) -> some View {
         GlassCard(goldTint: true) {
             HStack(spacing: FFSpacing.lg) {
                 // Avatar
@@ -108,7 +132,7 @@ struct ProfileView: View {
         .padding(.horizontal)
     }
 
-    private var statsSection: some View {
+    private func statsSection(user: FFUser) -> some View {
         VStack(alignment: .leading, spacing: FFSpacing.md) {
             Text("Stats")
                 .font(FFTypography.headlineSmall)
@@ -150,10 +174,13 @@ struct ProfileView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: FFSpacing.md) {
-                    AchievementBadge(icon: "star.fill", name: "First Draft", isUnlocked: true)
-                    AchievementBadge(icon: "flame.fill", name: "Hot Streak", isUnlocked: true)
-                    AchievementBadge(icon: "crown.fill", name: "Champion", isUnlocked: false)
-                    AchievementBadge(icon: "eye.fill", name: "Prophet", isUnlocked: false)
+                    ForEach(viewModel.achievements) { achievement in
+                        AchievementBadge(
+                            icon: achievement.icon,
+                            name: achievement.name,
+                            isUnlocked: achievement.isUnlocked
+                        )
+                    }
                 }
                 .padding(.horizontal)
             }
@@ -167,24 +194,32 @@ struct ProfileView: View {
                 .foregroundColor(FFColors.textPrimary)
                 .padding(.horizontal)
 
-            VStack(spacing: FFSpacing.sm) {
-                ActivityRow(
-                    icon: "trophy.fill",
-                    text: "Joined Box Office Champions",
-                    time: "2 days ago"
-                )
-                ActivityRow(
-                    icon: "film.fill",
-                    text: "Drafted Avatar 4",
-                    time: "2 days ago"
-                )
-                ActivityRow(
-                    icon: "star.fill",
-                    text: "Earned 'First Draft' achievement",
-                    time: "2 days ago"
-                )
+            if viewModel.recentActivity.isEmpty {
+                HStack {
+                    Spacer()
+                    VStack(spacing: FFSpacing.sm) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 32))
+                            .foregroundColor(FFColors.textTertiary)
+                        Text("No recent activity")
+                            .font(FFTypography.bodySmall)
+                            .foregroundColor(FFColors.textSecondary)
+                    }
+                    .padding(.vertical, FFSpacing.xl)
+                    Spacer()
+                }
+            } else {
+                VStack(spacing: FFSpacing.sm) {
+                    ForEach(viewModel.recentActivity) { activity in
+                        ActivityRow(
+                            icon: activity.icon,
+                            text: activity.text,
+                            time: activity.timeAgo
+                        )
+                    }
+                }
+                .padding(.horizontal)
             }
-            .padding(.horizontal)
         }
     }
 
@@ -196,6 +231,105 @@ struct ProfileView: View {
             SettingsRow(icon: "info.circle.fill", title: "About")
         }
         .padding(.horizontal)
+    }
+}
+
+// MARK: - Edit Profile Sheet
+
+struct EditProfileSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var viewModel: ProfileViewModel
+    let user: FFUser
+
+    @State private var displayName: String = ""
+    @State private var username: String = ""
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                FFColors.backgroundDark.ignoresSafeArea()
+
+                VStack(spacing: FFSpacing.xl) {
+                    // Avatar
+                    ZStack {
+                        Circle()
+                            .fill(FFColors.goldGradient)
+                            .frame(width: 100, height: 100)
+
+                        Text(displayName.prefix(1).uppercased())
+                            .font(FFTypography.displayLarge)
+                            .foregroundColor(FFColors.backgroundDark)
+                    }
+                    .padding(.top, FFSpacing.xl)
+
+                    VStack(spacing: FFSpacing.lg) {
+                        VStack(alignment: .leading, spacing: FFSpacing.sm) {
+                            Text("Display Name")
+                                .font(FFTypography.labelMedium)
+                                .foregroundColor(FFColors.textSecondary)
+
+                            TextField("Your display name", text: $displayName)
+                                .textFieldStyle(.plain)
+                                .font(FFTypography.bodyLarge)
+                                .foregroundColor(FFColors.textPrimary)
+                                .padding()
+                                .background {
+                                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                                        .fill(FFColors.backgroundElevated)
+                                }
+                        }
+
+                        VStack(alignment: .leading, spacing: FFSpacing.sm) {
+                            Text("Username")
+                                .font(FFTypography.labelMedium)
+                                .foregroundColor(FFColors.textSecondary)
+
+                            TextField("Your username", text: $username)
+                                .textFieldStyle(.plain)
+                                .font(FFTypography.bodyLarge)
+                                .foregroundColor(FFColors.textPrimary)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .padding()
+                                .background {
+                                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                                        .fill(FFColors.backgroundElevated)
+                                }
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    GoldButton(title: "Save Changes", fullWidth: true) {
+                        Task {
+                            if await viewModel.updateProfile(displayName: displayName, username: username) {
+                                dismiss()
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .disabled(viewModel.isSaving)
+
+                    if viewModel.isSaving {
+                        ProgressView()
+                            .tint(FFColors.goldPrimary)
+                    }
+
+                    Spacer()
+                }
+            }
+            .navigationTitle("Edit Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(FFColors.textSecondary)
+                }
+            }
+            .onAppear {
+                displayName = user.displayName
+                username = user.username
+            }
+        }
     }
 }
 
@@ -339,6 +473,8 @@ struct SettingsRow: View {
 
 struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject var viewModel: ProfileViewModel
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -348,8 +484,15 @@ struct SettingsSheet: View {
                 List {
                     Section("Account") {
                         SettingsListRow(icon: "person.fill", title: "Edit Profile")
-                        SettingsListRow(icon: "envelope.fill", title: "Email")
-                        SettingsListRow(icon: "lock.fill", title: "Password")
+                        if let email = viewModel.user?.email, !email.isEmpty {
+                            HStack {
+                                SettingsListRow(icon: "envelope.fill", title: "Email")
+                                Spacer()
+                                Text(email)
+                                    .font(FFTypography.caption)
+                                    .foregroundColor(FFColors.textSecondary)
+                            }
+                        }
                     }
 
                     Section("Preferences") {
@@ -365,10 +508,26 @@ struct SettingsSheet: View {
 
                     Section {
                         Button {
-                            // Sign out
+                            viewModel.signOut()
+                            dismiss()
                         } label: {
-                            Text("Sign Out")
-                                .foregroundColor(FFColors.ruby)
+                            HStack {
+                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                Text("Sign Out")
+                            }
+                            .foregroundColor(FFColors.ruby)
+                        }
+                    }
+
+                    Section {
+                        Button {
+                            showDeleteConfirmation = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("Delete Account")
+                            }
+                            .foregroundColor(FFColors.ruby)
                         }
                     }
                 }
@@ -381,6 +540,18 @@ struct SettingsSheet: View {
                     Button("Done") { dismiss() }
                         .foregroundColor(FFColors.goldPrimary)
                 }
+            }
+            .alert("Delete Account", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) {
+                    Task {
+                        if await viewModel.deleteAccount() {
+                            dismiss()
+                        }
+                    }
+                }
+            } message: {
+                Text("Are you sure you want to delete your account? This action cannot be undone.")
             }
         }
     }

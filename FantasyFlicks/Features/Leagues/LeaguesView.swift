@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct LeaguesView: View {
+    @StateObject private var viewModel = LeaguesViewModel()
     @State private var searchText = ""
     @State private var selectedFilter: LeagueFilter = .all
     @State private var showCreateLeague = false
@@ -20,10 +21,8 @@ struct LeaguesView: View {
         case completed = "Completed"
     }
 
-    private let leagues = FFLeague.sampleLeagues
-
     var filteredLeagues: [FFLeague] {
-        var filtered = leagues
+        var filtered = viewModel.leagues
 
         if !searchText.isEmpty {
             filtered = filtered.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
@@ -87,10 +86,23 @@ struct LeaguesView: View {
                 }
             }
             .sheet(isPresented: $showCreateLeague) {
-                CreateLeagueSheet()
+                CreateLeagueSheet(viewModel: viewModel)
             }
             .sheet(isPresented: $showJoinLeague) {
-                JoinLeagueSheet()
+                JoinLeagueSheet(viewModel: viewModel)
+            }
+            .refreshable {
+                await viewModel.refreshLeagues()
+            }
+            .alert("Error", isPresented: .constant(viewModel.error != nil)) {
+                Button("OK") { viewModel.clearMessages() }
+            } message: {
+                Text(viewModel.error ?? "")
+            }
+            .alert("Success", isPresented: .constant(viewModel.successMessage != nil)) {
+                Button("OK") { viewModel.clearMessages() }
+            } message: {
+                Text(viewModel.successMessage ?? "")
             }
         }
     }
@@ -194,36 +206,124 @@ struct FilterChip: View {
 
 struct CreateLeagueSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject var viewModel: LeaguesViewModel
+
+    @State private var leagueName = ""
+    @State private var leagueDescription = ""
+    @State private var maxMembers = 8
+    @State private var moviesPerPlayer = 5
+    @State private var draftType: DraftType = .serpentine
+    @State private var scoringMode: ScoringMode = .boxOfficeWorldwide
 
     var body: some View {
         NavigationStack {
             ZStack {
                 FFColors.backgroundDark.ignoresSafeArea()
 
-                VStack(spacing: FFSpacing.xl) {
-                    Image(systemName: "trophy.fill")
-                        .font(.system(size: 60))
-                        .foregroundStyle(FFColors.goldGradient)
+                ScrollView {
+                    VStack(spacing: FFSpacing.xl) {
+                        // League Name
+                        VStack(alignment: .leading, spacing: FFSpacing.sm) {
+                            Text("League Name")
+                                .font(FFTypography.labelMedium)
+                                .foregroundColor(FFColors.textSecondary)
 
-                    Text("Create League")
-                        .font(FFTypography.displaySmall)
-                        .foregroundColor(FFColors.textPrimary)
+                            TextField("Enter league name", text: $leagueName)
+                                .textFieldStyle(.plain)
+                                .font(FFTypography.bodyLarge)
+                                .foregroundColor(FFColors.textPrimary)
+                                .padding()
+                                .background {
+                                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                                        .fill(FFColors.backgroundElevated)
+                                        .overlay {
+                                            RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                                                .stroke(FFColors.goldPrimary.opacity(0.3), lineWidth: 1)
+                                        }
+                                }
+                        }
 
-                    Text("Coming soon! You'll be able to create custom leagues with your own rules.")
-                        .font(FFTypography.bodyMedium)
-                        .foregroundColor(FFColors.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
+                        // Description (Optional)
+                        VStack(alignment: .leading, spacing: FFSpacing.sm) {
+                            Text("Description (Optional)")
+                                .font(FFTypography.labelMedium)
+                                .foregroundColor(FFColors.textSecondary)
 
-                    Spacer()
+                            TextField("Describe your league", text: $leagueDescription, axis: .vertical)
+                                .textFieldStyle(.plain)
+                                .font(FFTypography.bodyMedium)
+                                .foregroundColor(FFColors.textPrimary)
+                                .lineLimit(3...5)
+                                .padding()
+                                .background {
+                                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                                        .fill(FFColors.backgroundElevated)
+                                }
+                        }
+
+                        // Settings
+                        GlassCard {
+                            VStack(spacing: FFSpacing.lg) {
+                                Text("League Settings")
+                                    .font(FFTypography.headlineSmall)
+                                    .foregroundColor(FFColors.textPrimary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                Stepper("Max Members: \(maxMembers)", value: $maxMembers, in: 2...12)
+                                    .foregroundColor(FFColors.textPrimary)
+
+                                Stepper("Movies Per Player: \(moviesPerPlayer)", value: $moviesPerPlayer, in: 1...10)
+                                    .foregroundColor(FFColors.textPrimary)
+
+                                Picker("Draft Type", selection: $draftType) {
+                                    ForEach(DraftType.allCases, id: \.self) { type in
+                                        Text(type.displayName).tag(type)
+                                    }
+                                }
+                                .foregroundColor(FFColors.textPrimary)
+
+                                Picker("Scoring", selection: $scoringMode) {
+                                    ForEach(ScoringMode.allCases, id: \.self) { mode in
+                                        Text(mode.displayName).tag(mode)
+                                    }
+                                }
+                                .foregroundColor(FFColors.textPrimary)
+                            }
+                        }
+
+                        GoldButton(title: "Create League", icon: "plus.circle", fullWidth: true) {
+                            Task {
+                                let settings = LeagueSettings(
+                                    draftType: draftType,
+                                    scoringMode: scoringMode,
+                                    moviesPerPlayer: moviesPerPlayer
+                                )
+                                if await viewModel.createLeague(
+                                    name: leagueName,
+                                    description: leagueDescription.isEmpty ? nil : leagueDescription,
+                                    maxMembers: maxMembers,
+                                    settings: settings
+                                ) != nil {
+                                    dismiss()
+                                }
+                            }
+                        }
+                        .disabled(leagueName.isEmpty || viewModel.isCreating)
+
+                        if viewModel.isCreating {
+                            ProgressView()
+                                .tint(FFColors.goldPrimary)
+                        }
+                    }
+                    .padding()
                 }
-                .padding(.top, FFSpacing.xxxl)
             }
+            .navigationTitle("Create League")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .foregroundColor(FFColors.goldPrimary)
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(FFColors.textSecondary)
                 }
             }
         }
@@ -234,6 +334,7 @@ struct CreateLeagueSheet: View {
 
 struct JoinLeagueSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject var viewModel: LeaguesViewModel
     @State private var inviteCode = ""
 
     var body: some View {
@@ -270,14 +371,29 @@ struct JoinLeagueSheet: View {
                                             .stroke(FFColors.goldPrimary.opacity(0.3), lineWidth: 1)
                                     }
                             }
+                            .onChange(of: inviteCode) { _, newValue in
+                                // Limit to 6 characters
+                                if newValue.count > 6 {
+                                    inviteCode = String(newValue.prefix(6))
+                                }
+                            }
                     }
                     .padding(.horizontal, FFSpacing.xl)
 
                     GoldButton(title: "Join League", fullWidth: true) {
-                        // Join action
+                        Task {
+                            if await viewModel.joinLeague(inviteCode: inviteCode) {
+                                dismiss()
+                            }
+                        }
                     }
                     .padding(.horizontal, FFSpacing.xl)
-                    .disabled(inviteCode.count < 6)
+                    .disabled(inviteCode.count < 6 || viewModel.isJoining)
+
+                    if viewModel.isJoining {
+                        ProgressView()
+                            .tint(FFColors.goldPrimary)
+                    }
 
                     Spacer()
                 }

@@ -281,8 +281,8 @@ struct FeaturedMovieCard: View {
                                 .foregroundColor(FFColors.textSecondary)
                         }
 
-                        if let date = movie.releaseDate {
-                            Text(date, format: .dateTime.year())
+                        if let year = movie.year {
+                            Text(String(year))
                                 .font(FFTypography.labelSmall)
                                 .foregroundColor(FFColors.textSecondary)
                         }

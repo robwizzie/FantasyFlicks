@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 @MainActor
 final class MoviesViewModel: ObservableObject {
@@ -21,7 +22,11 @@ final class MoviesViewModel: ObservableObject {
     @Published var isSearching = false
 
     @Published var selectedYear: Int = Calendar.current.component(.year, from: Date())
-    @Published var selectedGenre: Int?
+    @Published var selectedGenre: Int? {
+        didSet {
+            updateFeaturedMovie()
+        }
+    }
 
     // MARK: - Pagination
 
@@ -123,33 +128,9 @@ final class MoviesViewModel: ObservableObject {
         }
         return movies.filter { $0.genreIds.contains(genreId) }
     }
-}
 
-// MARK: - Sync wrapper for convertToFFMovie
-
-extension TMDBService {
-    /// Synchronous version for use in map operations
-    nonisolated func convertToFFMovie(_ tmdbMovie: TMDBMovie) -> FFMovie {
-        FFMovie(
-            tmdbId: tmdbMovie.id,
-            title: tmdbMovie.title,
-            originalTitle: tmdbMovie.originalTitle,
-            overview: tmdbMovie.overview ?? "",
-            posterPath: tmdbMovie.posterPath,
-            backdropPath: tmdbMovie.backdropPath,
-            releaseDate: tmdbMovie.releaseDate,
-            status: .planned,
-            runtime: nil,
-            genres: [],
-            genreIds: tmdbMovie.genreIds ?? [],
-            originalLanguage: tmdbMovie.originalLanguage ?? "en",
-            productionCompanies: [],
-            budget: nil,
-            cast: [],
-            crew: [],
-            popularity: tmdbMovie.popularity ?? 0,
-            voteAverage: tmdbMovie.voteAverage ?? 0,
-            voteCount: tmdbMovie.voteCount ?? 0
-        )
+    /// Update featured movie based on current filter
+    private func updateFeaturedMovie() {
+        featuredMovie = filteredMovies().first
     }
 }
