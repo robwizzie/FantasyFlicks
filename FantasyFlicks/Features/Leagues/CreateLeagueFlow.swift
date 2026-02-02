@@ -986,6 +986,8 @@ struct FFTextFieldStyle: TextFieldStyle {
         configuration
             .font(FFTypography.bodyLarge)
             .foregroundColor(FFColors.textPrimary)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.sentences)
             .padding()
             .background {
                 RoundedRectangle(cornerRadius: FFCornerRadius.medium)

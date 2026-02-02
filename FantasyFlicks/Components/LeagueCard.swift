@@ -15,17 +15,28 @@ struct LeagueCard: View {
     var onTap: (() -> Void)?
 
     var body: some View {
-        Button {
-            onTap?()
-        } label: {
-            if compact {
-                compactLayout
+        Group {
+            if let onTap = onTap {
+                Button {
+                    onTap()
+                } label: {
+                    cardContent
+                }
+                .buttonStyle(.plain)
+                .pressEffect()
             } else {
-                fullLayout
+                cardContent
             }
         }
-        .buttonStyle(.plain)
-        .pressEffect()
+    }
+
+    @ViewBuilder
+    private var cardContent: some View {
+        if compact {
+            compactLayout
+        } else {
+            fullLayout
+        }
     }
 
     private var fullLayout: some View {
@@ -39,7 +50,7 @@ struct LeagueCard: View {
                             .foregroundColor(FFColors.textPrimary)
                             .lineLimit(1)
 
-                        Text("\(league.seasonYear) Season")
+                        Text("\(String(league.seasonYear)) Season")
                             .font(FFTypography.labelSmall)
                             .foregroundColor(FFColors.textSecondary)
                     }
