@@ -16,6 +16,7 @@ struct DraftRoomView: View {
     @State private var searchText = ""
     @State private var showDraftBoard = false
     @State private var showConfirmPick = false
+    @State private var showSortOptions = false
     @State private var selectedMovie: FFMovie?
     @Environment(\.dismiss) private var dismiss
 
@@ -30,54 +31,59 @@ struct DraftRoomView: View {
         ZStack {
             FFColors.backgroundDark.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                // Top bar with timer
-                draftHeader
+            // Loading state
+            if viewModel.isLoading && viewModel.currentDraft == nil {
+                loadingView
+            } else {
+                VStack(spacing: 0) {
+                    // Top bar with timer
+                    draftHeader
 
-                // Current pick info
-                currentPickBanner
+                    // Current pick info
+                    currentPickBanner
 
-                // Tab selector
-                tabSelector
+                    // Tab selector
+                    tabSelector
 
-                // Content
-                TabView(selection: $selectedTab) {
-                    availableMoviesView
-                        .tag(DraftRoomTab.available)
+                    // Content
+                    TabView(selection: $selectedTab) {
+                        availableMoviesView
+                            .tag(DraftRoomTab.available)
 
-                    myTeamView
-                        .tag(DraftRoomTab.myTeam)
+                        myTeamView
+                            .tag(DraftRoomTab.myTeam)
 
-                    allTeamsView
-                        .tag(DraftRoomTab.teams)
+                        allTeamsView
+                            .tag(DraftRoomTab.teams)
 
-                    historyView
-                        .tag(DraftRoomTab.history)
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-            }
-
-            // Floating draft board button
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    Button {
-                        showDraftBoard = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "rectangle.grid.2x2.fill")
-                            Text("Draft Board")
-                                .font(FFTypography.labelMedium)
-                        }
-                        .foregroundColor(FFColors.backgroundDark)
-                        .padding(.horizontal, FFSpacing.lg)
-                        .padding(.vertical, FFSpacing.md)
-                        .background(FFColors.goldGradientHorizontal)
-                        .clipShape(Capsule())
-                        .shadow(color: FFColors.goldPrimary.opacity(0.3), radius: 8, y: 4)
+                        historyView
+                            .tag(DraftRoomTab.history)
                     }
-                    .padding()
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                }
+
+                // Floating draft board button
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button {
+                            showDraftBoard = true
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "rectangle.grid.2x2.fill")
+                                Text("Draft Board")
+                                    .font(FFTypography.labelMedium)
+                            }
+                            .foregroundColor(FFColors.backgroundDark)
+                            .padding(.horizontal, FFSpacing.lg)
+                            .padding(.vertical, FFSpacing.md)
+                            .background(FFColors.goldGradientHorizontal)
+                            .clipShape(Capsule())
+                            .shadow(color: FFColors.goldPrimary.opacity(0.3), radius: 8, y: 4)
+                        }
+                        .padding()
+                    }
                 }
             }
         }
@@ -103,15 +109,38 @@ struct DraftRoomView: View {
                         ) {
                             selectedMovie = nil
                             showConfirmPick = false
+                            viewModel.refreshMoviesAfterPick()
                         }
                     }
                 }
             }
         }
+        .confirmationDialog("Sort By", isPresented: $showSortOptions) {
+            ForEach(MovieSortOrder.allCases, id: \.self) { order in
+                Button(order.rawValue) {
+                    viewModel.sortOrder = order
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
         .alert("Error", isPresented: .constant(viewModel.error != nil)) {
             Button("OK") { viewModel.error = nil }
         } message: {
             Text(viewModel.error ?? "")
+        }
+    }
+
+    // MARK: - Loading View
+
+    private var loadingView: some View {
+        VStack(spacing: FFSpacing.lg) {
+            ProgressView()
+                .scaleEffect(1.5)
+                .tint(FFColors.goldPrimary)
+
+            Text("Loading Draft Room...")
+                .font(FFTypography.bodyMedium)
+                .foregroundColor(FFColors.textSecondary)
         }
     }
 
@@ -228,30 +257,64 @@ struct DraftRoomView: View {
 
     private var availableMoviesView: some View {
         VStack(spacing: 0) {
-            // Search bar
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(FFColors.textTertiary)
+            // Search and sort bar
+            HStack(spacing: FFSpacing.sm) {
+                // Search
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(FFColors.textTertiary)
 
-                TextField("Search movies...", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .foregroundColor(FFColors.textPrimary)
+                    TextField("Search movies...", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .foregroundColor(FFColors.textPrimary)
 
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(FFColors.textTertiary)
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(FFColors.textTertiary)
+                        }
                     }
+                }
+                .padding()
+                .background(FFColors.backgroundElevated)
+                .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+
+                // Sort button
+                Button {
+                    showSortOptions = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: viewModel.sortOrder.icon)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10))
+                    }
+                    .font(.system(size: 14))
+                    .foregroundColor(FFColors.goldPrimary)
+                    .padding()
+                    .background(FFColors.backgroundElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
                 }
             }
             .padding()
-            .background(FFColors.backgroundElevated)
-            .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
-            .padding()
 
-            // Movies list
+            // Movie count
+            HStack {
+                Text("\(filteredMovies.count) movies available")
+                    .font(FFTypography.caption)
+                    .foregroundColor(FFColors.textTertiary)
+
+                Spacer()
+
+                Text(viewModel.sortOrder.rawValue)
+                    .font(FFTypography.caption)
+                    .foregroundColor(FFColors.goldPrimary)
+            }
+            .padding(.horizontal)
+            .padding(.bottom, FFSpacing.sm)
+
+            // Movies list with infinite scroll
             ScrollView {
                 LazyVStack(spacing: FFSpacing.md) {
                     ForEach(filteredMovies) { movie in
@@ -263,6 +326,43 @@ struct DraftRoomView: View {
                                 showConfirmPick = true
                             }
                         )
+                        .onAppear {
+                            // Load more when reaching near end
+                            if movie.id == filteredMovies.last?.id {
+                                Task {
+                                    await viewModel.loadMoreMovies()
+                                }
+                            }
+                        }
+                    }
+
+                    // Loading more indicator
+                    if viewModel.isLoadingMore {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .tint(FFColors.goldPrimary)
+                            Spacer()
+                        }
+                        .padding()
+                    }
+
+                    // Load more button if has more
+                    if viewModel.hasMoreMovies && !viewModel.isLoadingMore {
+                        Button {
+                            Task {
+                                await viewModel.loadMoreMovies()
+                            }
+                        } label: {
+                            Text("Load More Movies")
+                                .font(FFTypography.labelMedium)
+                                .foregroundColor(FFColors.goldPrimary)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(FFColors.backgroundElevated)
+                                .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+                        }
+                        .padding(.horizontal)
                     }
                 }
                 .padding(.horizontal)
