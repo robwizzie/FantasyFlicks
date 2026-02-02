@@ -455,14 +455,12 @@ struct AvailableMovieCard: View {
                     .foregroundColor(FFColors.textPrimary)
                     .lineLimit(2)
 
-                if let releaseDate = movie.releaseDate {
-                    Text(releaseDate)
-                        .font(FFTypography.caption)
-                        .foregroundColor(FFColors.textSecondary)
-                }
+                Text(movie.formattedReleaseDate)
+                    .font(FFTypography.caption)
+                    .foregroundColor(FFColors.textSecondary)
 
-                if let overview = movie.overview {
-                    Text(overview)
+                if !movie.overview.isEmpty {
+                    Text(movie.overview)
                         .font(FFTypography.caption)
                         .foregroundColor(FFColors.textTertiary)
                         .lineLimit(2)
@@ -852,11 +850,9 @@ struct ConfirmPickSheet: View {
                             .foregroundColor(FFColors.textPrimary)
                             .multilineTextAlignment(.center)
 
-                        if let releaseDate = movie.releaseDate {
-                            Text(releaseDate)
-                                .font(FFTypography.bodyMedium)
-                                .foregroundColor(FFColors.textSecondary)
-                        }
+                        Text(movie.formattedReleaseDate)
+                            .font(FFTypography.bodyMedium)
+                            .foregroundColor(FFColors.textSecondary)
                     }
 
                     Spacer()
@@ -866,8 +862,8 @@ struct ConfirmPickSheet: View {
                         GoldButton(
                             title: "Confirm Pick",
                             icon: "checkmark.circle.fill",
-                            fullWidth: true,
                             isLoading: isSubmitting,
+                            fullWidth: true,
                             action: onConfirm
                         )
                         .disabled(isSubmitting)

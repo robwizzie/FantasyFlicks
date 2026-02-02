@@ -332,6 +332,7 @@ struct BasicInfoStep: View {
 
                     TextField("e.g., Box Office Champions", text: $settings.name)
                         .textFieldStyle(FFTextFieldStyle())
+                        .submitLabel(.done)
                 }
 
                 // Description
@@ -343,6 +344,7 @@ struct BasicInfoStep: View {
                     TextField("What's your league about?", text: $settings.description, axis: .vertical)
                         .textFieldStyle(FFTextFieldStyle())
                         .lineLimit(3...5)
+                        .submitLabel(.done)
                 }
 
                 // Max Members
@@ -403,6 +405,8 @@ struct BasicInfoStep: View {
             }
             .padding()
         }
+        .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneToolbar()
     }
 }
 
