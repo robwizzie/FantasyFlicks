@@ -207,15 +207,70 @@ extension View {
 
 struct FFButtonPressEffect: ViewModifier {
     @State private var isPressed = false
+    @State private var hasMoved = false
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(isPressed ? 0.96 : 1.0)
-            .animation(FFAnimations.quick, value: isPressed)
+            .scaleEffect(isPressed && !hasMoved ? 0.96 : 1.0)
+            .animation(FFAnimations.quick, value: isPressed && !hasMoved)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged { _ in isPressed = true }
-                    .onEnded { _ in isPressed = false }
+                    .onChanged { value in
+                        // If the gesture has moved more than 10 points, consider it a scroll
+                        let distance = sqrt(pow(value.translation.width, 2) + pow(value.translation.height, 2))
+                        if distance > 10 {
+                            hasMoved = true
+                            isPressed = false
+                        } else if !hasMoved {
+                            isPressed = true
+                        }
+                    }
+                    .onEnded { _ in
+                        isPressed = false
+                        hasMoved = false
+                    }
+            )
+    }
+}
+
+/// Scroll-safe button that won't trigger accidentally during scrolling
+struct ScrollSafeButton<Label: View>: View {
+    let action: () -> Void
+    let label: () -> Label
+
+    @State private var isPressed = false
+    @State private var hasMoved = false
+
+    init(action: @escaping () -> Void, @ViewBuilder label: @escaping () -> Label) {
+        self.action = action
+        self.label = label
+    }
+
+    var body: some View {
+        label()
+            .scaleEffect(isPressed && !hasMoved ? 0.96 : 1.0)
+            .animation(FFAnimations.quick, value: isPressed && !hasMoved)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let distance = sqrt(pow(value.translation.width, 2) + pow(value.translation.height, 2))
+                        if distance > 10 {
+                            hasMoved = true
+                            isPressed = false
+                        } else if !hasMoved {
+                            isPressed = true
+                        }
+                    }
+                    .onEnded { value in
+                        let distance = sqrt(pow(value.translation.width, 2) + pow(value.translation.height, 2))
+                        // Only trigger action if we haven't moved significantly
+                        if distance <= 10 && !hasMoved {
+                            action()
+                        }
+                        isPressed = false
+                        hasMoved = false
+                    }
             )
     }
 }

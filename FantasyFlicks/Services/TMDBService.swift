@@ -46,6 +46,24 @@ final class TMDBService {
         return try await networkManager.get(url: url)
     }
 
+    /// Fetch upcoming blockbuster movies (high-profile theatrical releases)
+    func getUpcomingBlockbusters(page: Int = 1) async throws -> TMDBMovieListResponse {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+
+        let today = Date()
+        let minDate = dateFormatter.string(from: today)
+
+        // Look up to 1 year ahead for upcoming blockbusters
+        let maxDate = dateFormatter.string(from: Calendar.current.date(byAdding: .year, value: 1, to: today) ?? today)
+
+        guard let url = TMDBEndpoint.discoverUpcomingBlockbusters(minDate: minDate, maxDate: maxDate, page: page).url() else {
+            throw NetworkError.invalidURL
+        }
+
+        return try await networkManager.get(url: url)
+    }
+
     /// Fetch now playing movies
     func getNowPlayingMovies(page: Int = 1) async throws -> TMDBMovieListResponse {
         guard let url = TMDBEndpoint.nowPlaying(page: page).url() else {

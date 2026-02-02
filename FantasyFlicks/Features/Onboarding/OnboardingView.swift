@@ -9,10 +9,46 @@
 import SwiftUI
 import AuthenticationServices
 import GoogleSignIn
+import Combine
+
+// MARK: - Onboarding ViewModel
+
+@MainActor
+final class OnboardingViewModel: ObservableObject {
+    @Published var upcomingMovies: [TMDBMovie] = []
+    @Published var isLoading = false
+    @Published var error: String?
+
+    private let tmdbService = TMDBService.shared
+
+    func loadUpcomingBlockbusters() async {
+        guard upcomingMovies.isEmpty else { return }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            // Fetch upcoming blockbusters using discover endpoint
+            // This gets high-profile theatrical releases sorted by popularity
+            let response = try await tmdbService.getUpcomingBlockbusters(page: 1)
+
+            // Filter for movies with posters (already sorted by popularity from API)
+            let blockbusters = response.results
+                .filter { $0.posterPath != nil }
+
+            // Take top 7 for the carousel
+            upcomingMovies = Array(blockbusters.prefix(7))
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
 
 struct OnboardingView: View {
     @StateObject private var authService = AuthenticationService.shared
+    @StateObject private var viewModel = OnboardingViewModel()
     @State private var currentPage = 0
+    @State private var visiblePage = 0 // Tracks which page is fully visible (for content loading)
 
     var body: some View {
         ZStack {
@@ -38,6 +74,16 @@ struct OnboardingView: View {
                     signInPage.tag(2)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
+                .onChange(of: currentPage) { _, newPage in
+                    // Only update visible page when transition completes
+                    // This prevents content from appearing mid-swipe
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        visiblePage = newPage
+                    }
+                }
+            }
+            .task {
+                await viewModel.loadUpcomingBlockbusters()
             }
 
             // Loading overlay
@@ -141,7 +187,7 @@ struct OnboardingView: View {
             Spacer()
 
             VStack(spacing: FFSpacing.sm) {
-                Text("Now Playing")
+                Text("Coming Soon")
                     .font(FFTypography.overline)
                     .foregroundColor(FFColors.goldPrimary)
                     .tracking(2)
@@ -152,9 +198,17 @@ struct OnboardingView: View {
                     .foregroundStyle(FFColors.goldGradient)
             }
 
-            // Movie Carousel
-            MovieCarousel()
-                .frame(height: 340)
+            // Movie Carousel - only show content when page is fully visible
+            if visiblePage == 1 || currentPage == 1 {
+                OnboardingMovieCarousel(movies: viewModel.upcomingMovies)
+                    .frame(height: 340)
+                    .opacity(visiblePage == 1 ? 1 : 0)
+                    .animation(.easeIn(duration: 0.2), value: visiblePage)
+            } else {
+                // Placeholder to maintain layout
+                Color.clear
+                    .frame(height: 340)
+            }
 
             VStack(spacing: FFSpacing.sm) {
                 Text("Score points based on real box office performance")
@@ -412,102 +466,139 @@ struct GoogleSignInButtonStyled: View {
     }
 }
 
-// MARK: - Google Logo
+// MARK: - Google Logo (Official SVG)
 
 struct GoogleLogo: View {
     var body: some View {
-        // Google "G" logo using paths
         GeometryReader { geometry in
-            let size = min(geometry.size.width, geometry.size.height)
+            let scale = min(geometry.size.width, geometry.size.height) / 48.0
 
             ZStack {
-                // Blue
+                // Red path (top-right arc)
                 Path { path in
-                    path.move(to: CGPoint(x: size * 0.98, y: size * 0.5))
-                    path.addLine(to: CGPoint(x: size * 0.98, y: size * 0.42))
-                    path.addLine(to: CGPoint(x: size * 0.52, y: size * 0.42))
-                    path.addLine(to: CGPoint(x: size * 0.52, y: size * 0.58))
-                    path.addLine(to: CGPoint(x: size * 0.82, y: size * 0.58))
+                    path.move(to: CGPoint(x: 24 * scale, y: 9.5 * scale))
                     path.addCurve(
-                        to: CGPoint(x: size * 0.5, y: size * 0.9),
-                        control1: CGPoint(x: size * 0.78, y: size * 0.76),
-                        control2: CGPoint(x: size * 0.66, y: size * 0.9)
+                        to: CGPoint(x: 33.21 * scale, y: 13.1 * scale),
+                        control1: CGPoint(x: 27.54 * scale, y: 9.5 * scale),
+                        control2: CGPoint(x: 30.71 * scale, y: 10.72 * scale)
                     )
+                    path.addLine(to: CGPoint(x: 40.06 * scale, y: 6.25 * scale))
+                    path.addCurve(
+                        to: CGPoint(x: 24 * scale, y: 0),
+                        control1: CGPoint(x: 35.9 * scale, y: 2.38 * scale),
+                        control2: CGPoint(x: 30.47 * scale, y: 0)
+                    )
+                    path.addCurve(
+                        to: CGPoint(x: 2.56 * scale, y: 13.22 * scale),
+                        control1: CGPoint(x: 14.62 * scale, y: 0),
+                        control2: CGPoint(x: 6.51 * scale, y: 5.38 * scale)
+                    )
+                    path.addLine(to: CGPoint(x: 10.54 * scale, y: 19.41 * scale))
+                    path.addCurve(
+                        to: CGPoint(x: 24 * scale, y: 9.5 * scale),
+                        control1: CGPoint(x: 12.43 * scale, y: 13.72 * scale),
+                        control2: CGPoint(x: 17.74 * scale, y: 9.5 * scale)
+                    )
+                    path.closeSubpath()
+                }
+                .fill(Color(red: 234/255, green: 67/255, blue: 53/255))
+
+                // Blue path (right side with bar)
+                Path { path in
+                    path.move(to: CGPoint(x: 46.98 * scale, y: 24.55 * scale))
+                    path.addCurve(
+                        to: CGPoint(x: 46.6 * scale, y: 20 * scale),
+                        control1: CGPoint(x: 46.98 * scale, y: 22.98 * scale),
+                        control2: CGPoint(x: 46.83 * scale, y: 21.46 * scale)
+                    )
+                    path.addLine(to: CGPoint(x: 24 * scale, y: 20 * scale))
+                    path.addLine(to: CGPoint(x: 24 * scale, y: 29.02 * scale))
+                    path.addLine(to: CGPoint(x: 36.94 * scale, y: 29.02 * scale))
+                    path.addCurve(
+                        to: CGPoint(x: 32.16 * scale, y: 36.2 * scale),
+                        control1: CGPoint(x: 36.36 * scale, y: 31.98 * scale),
+                        control2: CGPoint(x: 34.68 * scale, y: 34.5 * scale)
+                    )
+                    path.addLine(to: CGPoint(x: 39.89 * scale, y: 42.2 * scale))
+                    path.addCurve(
+                        to: CGPoint(x: 46.98 * scale, y: 24.55 * scale),
+                        control1: CGPoint(x: 44.4 * scale, y: 38.02 * scale),
+                        control2: CGPoint(x: 46.98 * scale, y: 31.91 * scale)
+                    )
+                    path.closeSubpath()
                 }
                 .fill(Color(red: 66/255, green: 133/255, blue: 244/255))
 
-                // Green
+                // Yellow path (left side)
                 Path { path in
-                    path.move(to: CGPoint(x: size * 0.5, y: size * 0.9))
+                    path.move(to: CGPoint(x: 10.53 * scale, y: 28.59 * scale))
                     path.addCurve(
-                        to: CGPoint(x: size * 0.14, y: size * 0.64),
-                        control1: CGPoint(x: size * 0.3, y: size * 0.9),
-                        control2: CGPoint(x: size * 0.14, y: size * 0.78)
+                        to: CGPoint(x: 9.77 * scale, y: 24 * scale),
+                        control1: CGPoint(x: 10.05 * scale, y: 27.14 * scale),
+                        control2: CGPoint(x: 9.77 * scale, y: 25.6 * scale)
                     )
-                    path.addLine(to: CGPoint(x: size * 0.02, y: size * 0.64))
                     path.addCurve(
-                        to: CGPoint(x: size * 0.5, y: size * 1.0),
-                        control1: CGPoint(x: size * 0.02, y: size * 0.84),
-                        control2: CGPoint(x: size * 0.24, y: size * 1.0)
+                        to: CGPoint(x: 10.53 * scale, y: 19.41 * scale),
+                        control1: CGPoint(x: 9.77 * scale, y: 22.4 * scale),
+                        control2: CGPoint(x: 10.04 * scale, y: 20.86 * scale)
                     )
-                }
-                .fill(Color(red: 52/255, green: 168/255, blue: 83/255))
-
-                // Yellow
-                Path { path in
-                    path.move(to: CGPoint(x: size * 0.14, y: size * 0.36))
+                    path.addLine(to: CGPoint(x: 2.55 * scale, y: 13.22 * scale))
                     path.addCurve(
-                        to: CGPoint(x: size * 0.14, y: size * 0.64),
-                        control1: CGPoint(x: size * 0.06, y: size * 0.44),
-                        control2: CGPoint(x: size * 0.06, y: size * 0.56)
+                        to: CGPoint(x: 0, y: 24 * scale),
+                        control1: CGPoint(x: 0.92 * scale, y: 16.46 * scale),
+                        control2: CGPoint(x: 0, y: 20.12 * scale)
                     )
-                    path.addLine(to: CGPoint(x: size * 0.02, y: size * 0.64))
                     path.addCurve(
-                        to: CGPoint(x: size * 0.02, y: size * 0.36),
-                        control1: CGPoint(x: -size * 0.02, y: size * 0.54),
-                        control2: CGPoint(x: -size * 0.02, y: size * 0.46)
+                        to: CGPoint(x: 2.56 * scale, y: 34.78 * scale),
+                        control1: CGPoint(x: 0, y: 27.88 * scale),
+                        control2: CGPoint(x: 0.92 * scale, y: 31.54 * scale)
                     )
+                    path.addLine(to: CGPoint(x: 10.53 * scale, y: 28.59 * scale))
+                    path.closeSubpath()
                 }
                 .fill(Color(red: 251/255, green: 188/255, blue: 5/255))
 
-                // Red
+                // Green path (bottom)
                 Path { path in
-                    path.move(to: CGPoint(x: size * 0.5, y: size * 0.1))
+                    path.move(to: CGPoint(x: 24 * scale, y: 48 * scale))
                     path.addCurve(
-                        to: CGPoint(x: size * 0.82, y: size * 0.28),
-                        control1: CGPoint(x: size * 0.66, y: size * 0.1),
-                        control2: CGPoint(x: size * 0.76, y: size * 0.16)
+                        to: CGPoint(x: 39.89 * scale, y: 42.19 * scale),
+                        control1: CGPoint(x: 30.48 * scale, y: 48 * scale),
+                        control2: CGPoint(x: 35.93 * scale, y: 45.87 * scale)
                     )
-                    path.addLine(to: CGPoint(x: size * 0.68, y: size * 0.4))
+                    path.addLine(to: CGPoint(x: 32.16 * scale, y: 36.19 * scale))
                     path.addCurve(
-                        to: CGPoint(x: size * 0.5, y: size * 0.26),
-                        control1: CGPoint(x: size * 0.64, y: size * 0.32),
-                        control2: CGPoint(x: size * 0.58, y: size * 0.26)
+                        to: CGPoint(x: 24 * scale, y: 38.49 * scale),
+                        control1: CGPoint(x: 30.01 * scale, y: 37.64 * scale),
+                        control2: CGPoint(x: 27.24 * scale, y: 38.49 * scale)
                     )
                     path.addCurve(
-                        to: CGPoint(x: size * 0.14, y: size * 0.36),
-                        control1: CGPoint(x: size * 0.34, y: size * 0.26),
-                        control2: CGPoint(x: size * 0.2, y: size * 0.3)
+                        to: CGPoint(x: 10.53 * scale, y: 28.58 * scale),
+                        control1: CGPoint(x: 17.74 * scale, y: 38.49 * scale),
+                        control2: CGPoint(x: 12.43 * scale, y: 34.27 * scale)
                     )
-                    path.addLine(to: CGPoint(x: size * 0.02, y: size * 0.36))
+                    path.addLine(to: CGPoint(x: 2.55 * scale, y: 34.77 * scale))
                     path.addCurve(
-                        to: CGPoint(x: size * 0.5, y: size * 0.0),
-                        control1: CGPoint(x: size * 0.08, y: size * 0.14),
-                        control2: CGPoint(x: size * 0.28, y: size * 0.0)
+                        to: CGPoint(x: 24 * scale, y: 48 * scale),
+                        control1: CGPoint(x: 6.51 * scale, y: 42.62 * scale),
+                        control2: CGPoint(x: 14.62 * scale, y: 48 * scale)
                     )
+                    path.closeSubpath()
                 }
-                .fill(Color(red: 234/255, green: 67/255, blue: 53/255))
+                .fill(Color(red: 52/255, green: 168/255, blue: 83/255))
             }
         }
     }
 }
 
-// MARK: - Movie Carousel
+// MARK: - Onboarding Movie Carousel
 
-struct MovieCarousel: View {
-    @State private var movies: [OnboardingMovie] = OnboardingMovie.sampleMovies
-    @State private var currentIndex: Int = 2
+struct OnboardingMovieCarousel: View {
+    let movies: [TMDBMovie]
+    @State private var currentIndex: Int = 0
     @State private var dragOffset: CGFloat = 0
+    @State private var autoScrollTimer: Timer?
+    @State private var userHasInteracted = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -525,7 +616,7 @@ struct MovieCarousel: View {
                     let scale = max(0.7, 1 - (distance / maxDistance) * 0.3)
                     let opacity = max(0.4, 1 - (distance / maxDistance) * 0.6)
 
-                    MoviePosterCard(movie: movie, isCenter: index == currentIndex)
+                    OnboardingMoviePosterCard(movie: movie, isCenter: index == currentIndex)
                         .frame(width: cardWidth, height: 220)
                         .scaleEffect(scale)
                         .opacity(opacity)
@@ -540,6 +631,11 @@ struct MovieCarousel: View {
             .gesture(
                 DragGesture()
                     .onChanged { value in
+                        // Stop auto-scrolling when user starts swiping
+                        if !userHasInteracted {
+                            userHasInteracted = true
+                            stopAutoScroll()
+                        }
                         dragOffset = value.translation.width
                     }
                     .onEnded { value in
@@ -554,43 +650,90 @@ struct MovieCarousel: View {
             )
         }
         .onAppear {
+            // Start in the middle if we have enough movies
+            if movies.count > 2 {
+                currentIndex = movies.count / 2
+            }
             startAutoScroll()
+        }
+        .onDisappear {
+            stopAutoScroll()
         }
     }
 
     private func startAutoScroll() {
-        Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
+        guard !userHasInteracted else { return }
+        autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
+            guard !movies.isEmpty else { return }
             withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                 currentIndex = (currentIndex + 1) % movies.count
             }
         }
     }
+
+    private func stopAutoScroll() {
+        autoScrollTimer?.invalidate()
+        autoScrollTimer = nil
+    }
 }
 
-// MARK: - Movie Poster Card
+// MARK: - Onboarding Movie Poster Card
 
-struct MoviePosterCard: View {
-    let movie: OnboardingMovie
+struct OnboardingMoviePosterCard: View {
+    let movie: TMDBMovie
     let isCenter: Bool
     @State private var isShimmering = false
+
+    private var posterURL: URL? {
+        guard let path = movie.posterPath else { return nil }
+        return URL(string: "\(APIConfiguration.TMDB.imageBaseURL)/\(APIConfiguration.TMDB.PosterSize.medium.rawValue)\(path)")
+    }
+
+    private var formattedReleaseDate: String {
+        guard let date = movie.releaseDate else { return "Coming Soon" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        return formatter.string(from: date)
+    }
 
     var body: some View {
         VStack(spacing: FFSpacing.sm) {
             // Poster
             ZStack {
-                RoundedRectangle(cornerRadius: FFCornerRadius.medium)
-                    .fill(
-                        LinearGradient(
-                            colors: movie.gradientColors,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-
-                // Film icon overlay
-                Image(systemName: "film")
-                    .font(.system(size: 40))
-                    .foregroundColor(.white.opacity(0.3))
+                // Actual movie poster
+                AsyncImage(url: posterURL) { phase in
+                    switch phase {
+                    case .empty:
+                        RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                            .fill(FFColors.backgroundElevated)
+                            .overlay {
+                                ProgressView()
+                                    .tint(FFColors.goldPrimary)
+                            }
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 140, height: 180)
+                            .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+                    case .failure:
+                        RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color(hex: "1a1a2e"), Color(hex: "16213e")],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .overlay {
+                                Image(systemName: "film")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.white.opacity(0.3))
+                            }
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
 
                 // Shimmer effect for center card
                 if isCenter {
@@ -634,7 +777,7 @@ struct MoviePosterCard: View {
                     .foregroundColor(isCenter ? FFColors.textPrimary : FFColors.textSecondary)
                     .lineLimit(1)
 
-                Text(movie.releaseDate)
+                Text(formattedReleaseDate)
                     .font(FFTypography.caption)
                     .foregroundColor(FFColors.textTertiary)
             }
@@ -648,43 +791,6 @@ struct MoviePosterCard: View {
             isShimmering = newValue
         }
     }
-}
-
-// MARK: - Onboarding Movie Model
-
-struct OnboardingMovie: Identifiable {
-    let id = UUID()
-    let title: String
-    let releaseDate: String
-    let gradientColors: [Color]
-
-    static let sampleMovies: [OnboardingMovie] = [
-        OnboardingMovie(
-            title: "Cosmic Voyage",
-            releaseDate: "Feb 2026",
-            gradientColors: [Color(hex: "1a1a2e"), Color(hex: "16213e"), Color(hex: "0f3460")]
-        ),
-        OnboardingMovie(
-            title: "The Last Kingdom",
-            releaseDate: "Mar 2026",
-            gradientColors: [Color(hex: "2d132c"), Color(hex: "801336"), Color(hex: "c72c41")]
-        ),
-        OnboardingMovie(
-            title: "Neon Dreams",
-            releaseDate: "Apr 2026",
-            gradientColors: [Color(hex: "0d0628"), Color(hex: "1a1a40"), Color(hex: "4a0080")]
-        ),
-        OnboardingMovie(
-            title: "Ocean's Secret",
-            releaseDate: "May 2026",
-            gradientColors: [Color(hex: "0a192f"), Color(hex: "172a45"), Color(hex: "1f4068")]
-        ),
-        OnboardingMovie(
-            title: "Golden Hour",
-            releaseDate: "Jun 2026",
-            gradientColors: [Color(hex: "1a1a1a"), Color(hex: "3d3d3d"), Color(hex: "4a3728")]
-        )
-    ]
 }
 
 // MARK: - Feature Row (kept for compatibility)

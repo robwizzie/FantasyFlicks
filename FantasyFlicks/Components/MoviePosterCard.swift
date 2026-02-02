@@ -51,9 +51,7 @@ struct MoviePosterCard: View {
     var onTap: (() -> Void)?
 
     var body: some View {
-        Button {
-            onTap?()
-        } label: {
+        ScrollSafeButton(action: { onTap?() }) {
             VStack(alignment: .leading, spacing: FFSpacing.sm) {
                 // Poster image
                 posterImage
@@ -83,8 +81,6 @@ struct MoviePosterCard: View {
                 }
             }
         }
-        .buttonStyle(.plain)
-        .pressEffect()
     }
 
     @ViewBuilder
@@ -220,9 +216,7 @@ struct FeaturedMovieCard: View {
     var onTap: (() -> Void)?
 
     var body: some View {
-        Button {
-            onTap?()
-        } label: {
+        ScrollSafeButton(action: { onTap?() }) {
             ZStack(alignment: .bottomLeading) {
                 // Backdrop image
                 if let backdropURL = movie.backdropURL {
@@ -297,8 +291,6 @@ struct FeaturedMovieCard: View {
                     .stroke(FFColors.goldPrimary.opacity(0.2), lineWidth: 1)
             }
         }
-        .buttonStyle(.plain)
-        .pressEffect()
     }
 }
 

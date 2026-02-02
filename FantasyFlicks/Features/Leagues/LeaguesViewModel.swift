@@ -112,16 +112,25 @@ final class LeaguesViewModel: ObservableObject {
             "seasonYear": Calendar.current.component(.year, from: Date()),
             "isSeasonComplete": false,
             "settings": [
+                "leagueMode": settings.leagueMode.rawValue,
                 "draftType": settings.draftType.rawValue,
                 "draftOrderType": settings.draftOrderType.rawValue,
                 "scoringMode": settings.scoringMode.rawValue,
                 "scoringDirection": settings.scoringDirection.rawValue,
+                "boxOfficeCutoff": settings.boxOfficeCutoff.rawValue,
                 "moviesPerPlayer": settings.moviesPerPlayer,
                 "pickTimerSeconds": settings.pickTimerSeconds,
-                "allowTrading": settings.allowTrading,
-                "tradeReviewPeriodDays": settings.tradeReviewPeriodDays,
-                "includeOscarPredictions": settings.includeOscarPredictions,
-                "oscarBonusMultiplier": settings.oscarBonusMultiplier,
+                "tradingSettings": [
+                    "enabled": settings.tradingSettings.enabled,
+                    "approvalMode": settings.tradingSettings.approvalMode.rawValue,
+                    "reviewPeriodHours": settings.tradingSettings.reviewPeriodHours
+                ],
+                "freeAgencySettings": [
+                    "enabled": settings.freeAgencySettings.enabled,
+                    "waiverPeriodHours": settings.freeAgencySettings.waiverPeriodHours,
+                    "waiverOrder": settings.freeAgencySettings.waiverOrder.rawValue,
+                    "allowDroppingShowingMovies": settings.freeAgencySettings.allowDroppingShowingMovies
+                ],
                 "movieFilters": [
                     "theatricalOnly": settings.movieFilters.theatricalOnly,
                     "minimumBudget": settings.movieFilters.minimumBudget as Any,
@@ -314,18 +323,33 @@ final class LeaguesViewModel: ObservableObject {
             excludedGenreIds: filtersData["excludedGenreIds"] as? [Int] ?? []
         )
 
+        let tradingData = settingsData["tradingSettings"] as? [String: Any] ?? [:]
+        let tradingSettings = TradingSettings(
+            enabled: tradingData["enabled"] as? Bool ?? true,
+            approvalMode: TradeApprovalMode(rawValue: tradingData["approvalMode"] as? String ?? "") ?? .autoAccept,
+            reviewPeriodHours: tradingData["reviewPeriodHours"] as? Int ?? 24
+        )
+
+        let freeAgencyData = settingsData["freeAgencySettings"] as? [String: Any] ?? [:]
+        let freeAgencySettings = FreeAgencySettings(
+            enabled: freeAgencyData["enabled"] as? Bool ?? true,
+            waiverPeriodHours: freeAgencyData["waiverPeriodHours"] as? Int ?? 24,
+            waiverOrder: WaiverOrderType(rawValue: freeAgencyData["waiverOrder"] as? String ?? "") ?? .reverseStandings,
+            allowDroppingShowingMovies: freeAgencyData["allowDroppingShowingMovies"] as? Bool ?? false
+        )
+
         let settings = LeagueSettings(
+            leagueMode: LeagueMode(rawValue: settingsData["leagueMode"] as? String ?? "") ?? .boxOffice,
             draftType: DraftType(rawValue: settingsData["draftType"] as? String ?? "") ?? .serpentine,
             draftOrderType: DraftOrderType(rawValue: settingsData["draftOrderType"] as? String ?? "") ?? .random,
             manualDraftOrder: settingsData["manualDraftOrder"] as? [String],
-            scoringMode: ScoringMode(rawValue: settingsData["scoringMode"] as? String ?? "") ?? .boxOfficeWorldwide,
-            scoringDirection: ScoringDirection(rawValue: settingsData["scoringDirection"] as? String ?? "") ?? .highest,
             moviesPerPlayer: settingsData["moviesPerPlayer"] as? Int ?? 5,
             pickTimerSeconds: settingsData["pickTimerSeconds"] as? Int ?? 120,
-            allowTrading: settingsData["allowTrading"] as? Bool ?? false,
-            tradeReviewPeriodDays: settingsData["tradeReviewPeriodDays"] as? Int ?? 1,
-            includeOscarPredictions: settingsData["includeOscarPredictions"] as? Bool ?? false,
-            oscarBonusMultiplier: settingsData["oscarBonusMultiplier"] as? Double ?? 1.5,
+            scoringMode: ScoringMode(rawValue: settingsData["scoringMode"] as? String ?? "") ?? .boxOfficeWorldwide,
+            scoringDirection: ScoringDirection(rawValue: settingsData["scoringDirection"] as? String ?? "") ?? .highest,
+            boxOfficeCutoff: BoxOfficeCutoff(rawValue: settingsData["boxOfficeCutoff"] as? String ?? "") ?? .yearEnd,
+            tradingSettings: tradingSettings,
+            freeAgencySettings: freeAgencySettings,
             movieFilters: movieFilters
         )
 

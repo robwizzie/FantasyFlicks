@@ -9,10 +9,10 @@ import SwiftUI
 
 /// Main tab-based navigation container using native iOS tab bar
 struct MainTabView: View {
-    @State private var selectedTab: Tab = .home
+    @StateObject private var navigationCoordinator = NavigationCoordinator.shared
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: $navigationCoordinator.selectedTab) {
             HomeView()
                 .tabItem {
                     Label(Tab.home.rawValue, systemImage: Tab.home.icon)
@@ -44,6 +44,7 @@ struct MainTabView: View {
                 .tag(Tab.profile)
         }
         .tint(FFColors.goldPrimary)
+        .environment(\.navigationCoordinator, navigationCoordinator)
     }
 }
 

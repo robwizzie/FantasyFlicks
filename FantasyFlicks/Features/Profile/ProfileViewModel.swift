@@ -109,7 +109,13 @@ final class ProfileViewModel: ObservableObject {
         }
     }
 
-    func updateProfile(displayName: String?, username: String?) async -> Bool {
+    func updateProfile(
+        displayName: String?,
+        username: String?,
+        avatarIcon: String? = nil,
+        favoriteGenre: String? = nil,
+        bio: String? = nil
+    ) async -> Bool {
         guard let userId = authService.currentUser?.id else { return false }
 
         isSaving = true
@@ -122,13 +128,33 @@ final class ProfileViewModel: ObservableObject {
         }
 
         if let username = username, !username.isEmpty {
-            // Check if username is available
-            let isAvailable = await checkUsernameAvailability(username)
-            if !isAvailable {
-                error = "Username is already taken"
-                return false
+            // Check if username changed and is available
+            let currentUsername = user?.username ?? ""
+            if username.lowercased() != currentUsername.lowercased() {
+                let isAvailable = await authService.checkUsernameAvailability(username)
+                if !isAvailable {
+                    error = "Username is already taken"
+                    return false
+                }
             }
             updates["username"] = username
+            updates["usernameLowercase"] = username.lowercased()
+        }
+
+        if let avatarIcon = avatarIcon {
+            updates["avatarIcon"] = avatarIcon
+        }
+
+        if let favoriteGenre = favoriteGenre {
+            updates["favoriteGenre"] = favoriteGenre
+        } else {
+            updates["favoriteGenre"] = NSNull()
+        }
+
+        if let bio = bio, !bio.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            updates["bio"] = bio.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            updates["bio"] = NSNull()
         }
 
         guard !updates.isEmpty else { return true }
@@ -242,25 +268,6 @@ final class ProfileViewModel: ObservableObject {
 
     // MARK: - Private Methods
 
-    private func checkUsernameAvailability(_ username: String) async -> Bool {
-        guard let currentUserId = authService.currentUser?.id else { return false }
-
-        do {
-            let snapshot = try await db.collection("users")
-                .whereField("username", isEqualTo: username.lowercased())
-                .limit(to: 1)
-                .getDocuments()
-
-            // Available if no results, or the only result is the current user
-            if let doc = snapshot.documents.first {
-                return doc.documentID == currentUserId
-            }
-            return true
-        } catch {
-            return false
-        }
-    }
-
     private func loadRecentActivity() async {
         guard let userId = authService.currentUser?.id else { return }
 
@@ -347,6 +354,7 @@ final class ProfileViewModel: ObservableObject {
             displayName: data["displayName"] as? String ?? "User",
             email: data["email"] as? String ?? "",
             avatarURL: (data["avatarURL"] as? String).flatMap { URL(string: $0) },
+            avatarIcon: data["avatarIcon"] as? String,
             totalLeagues: data["totalLeagues"] as? Int ?? 0,
             leaguesWon: data["leaguesWon"] as? Int ?? 0,
             totalMoviesDrafted: data["totalMoviesDrafted"] as? Int ?? 0,
@@ -357,6 +365,9 @@ final class ProfileViewModel: ObservableObject {
             draftReminderMinutes: data["draftReminderMinutes"] as? Int ?? 30,
             friendIds: data["friendIds"] as? [String] ?? [],
             blockedUserIds: data["blockedUserIds"] as? [String] ?? [],
+            hasCompletedProfileSetup: data["hasCompletedProfileSetup"] as? Bool ?? false,
+            favoriteGenre: data["favoriteGenre"] as? String,
+            bio: data["bio"] as? String,
             createdAt: createdAt,
             lastActiveAt: lastActiveAt
         )

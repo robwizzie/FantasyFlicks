@@ -157,11 +157,19 @@ final class HomeViewModel: ObservableObject {
         error = nil
 
         do {
-            let response = try await TMDBService.shared.getUpcomingMovies(page: 1)
+            // Use the blockbusters endpoint which filters by future dates
+            let response = try await TMDBService.shared.getUpcomingBlockbusters(page: 1)
 
-            upcomingMovies = response.results.prefix(10).map { tmdbMovie in
-                TMDBService.shared.convertToFFMovie(tmdbMovie)
-            }
+            let today = Date()
+            // Filter to only include movies with release dates in the future
+            upcomingMovies = response.results
+                .map { TMDBService.shared.convertToFFMovie($0) }
+                .filter { movie in
+                    guard let releaseDate = movie.releaseDate else { return false }
+                    return releaseDate > today
+                }
+                .prefix(10)
+                .map { $0 }
 
         } catch let networkError as NetworkError {
             error = networkError.errorDescription
@@ -210,8 +218,8 @@ final class HomeViewModel: ObservableObject {
         let settingsData = data["settings"] as? [String: Any] ?? [:]
         let settings = LeagueSettings(
             draftType: DraftType(rawValue: settingsData["draftType"] as? String ?? "") ?? .serpentine,
-            scoringMode: ScoringMode(rawValue: settingsData["scoringMode"] as? String ?? "") ?? .boxOfficeWorldwide,
-            moviesPerPlayer: settingsData["moviesPerPlayer"] as? Int ?? 5
+            moviesPerPlayer: settingsData["moviesPerPlayer"] as? Int ?? 5,
+            scoringMode: ScoringMode(rawValue: settingsData["scoringMode"] as? String ?? "") ?? .boxOfficeWorldwide
         )
 
         return FFLeague(

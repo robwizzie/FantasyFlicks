@@ -18,7 +18,7 @@ struct ProfileView: View {
                 FFColors.backgroundDark.ignoresSafeArea()
 
                 if let user = viewModel.user {
-                    ScrollView {
+                    ScrollView(.vertical, showsIndicators: true) {
                         VStack(spacing: FFSpacing.xl) {
                             // Profile header
                             profileHeader(user: user)
@@ -90,9 +90,15 @@ struct ProfileView: View {
                         .fill(FFColors.goldGradient)
                         .frame(width: 80, height: 80)
 
-                    Text(user.displayName.prefix(1).uppercased())
-                        .font(FFTypography.displayMedium)
-                        .foregroundColor(FFColors.backgroundDark)
+                    if let avatarIcon = user.avatarIcon {
+                        Image(systemName: avatarIcon)
+                            .font(.system(size: 36))
+                            .foregroundColor(FFColors.backgroundDark)
+                    } else {
+                        Text(user.displayName.prefix(1).uppercased())
+                            .font(FFTypography.displayMedium)
+                            .foregroundColor(FFColors.backgroundDark)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: FFSpacing.sm) {
@@ -103,6 +109,18 @@ struct ProfileView: View {
                     Text("@\(user.username)")
                         .font(FFTypography.bodyMedium)
                         .foregroundColor(FFColors.textSecondary)
+
+                    if let genre = user.favoriteGenre {
+                        HStack(spacing: FFSpacing.xs) {
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(FFColors.ruby)
+
+                            Text(genre)
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textTertiary)
+                        }
+                    }
 
                     HStack(spacing: FFSpacing.sm) {
                         Image(systemName: "star.fill")
@@ -243,78 +261,212 @@ struct EditProfileSheet: View {
 
     @State private var displayName: String = ""
     @State private var username: String = ""
+    @State private var selectedAvatarIcon: String?
+    @State private var selectedGenre: String?
+    @State private var bio: String = ""
+
+    private let avatarOptions = [
+        "film.fill", "star.fill", "popcorn.fill", "ticket.fill",
+        "tv.fill", "camera.fill", "sparkles", "person.crop.circle.fill"
+    ]
+
+    private let genreOptions = [
+        "Action", "Comedy", "Drama", "Horror", "Sci-Fi",
+        "Romance", "Thriller", "Animation", "Documentary", "Fantasy"
+    ]
 
     var body: some View {
         NavigationStack {
             ZStack {
                 FFColors.backgroundDark.ignoresSafeArea()
 
-                VStack(spacing: FFSpacing.xl) {
-                    // Avatar
-                    ZStack {
-                        Circle()
-                            .fill(FFColors.goldGradient)
-                            .frame(width: 100, height: 100)
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: FFSpacing.xl) {
+                        // Avatar Section
+                        VStack(spacing: FFSpacing.md) {
+                            // Selected avatar preview
+                            ZStack {
+                                Circle()
+                                    .fill(FFColors.goldPrimary.opacity(0.2))
+                                    .frame(width: 110, height: 110)
+                                    .blur(radius: 20)
 
-                        Text(displayName.prefix(1).uppercased())
-                            .font(FFTypography.displayLarge)
-                            .foregroundColor(FFColors.backgroundDark)
-                    }
-                    .padding(.top, FFSpacing.xl)
+                                Circle()
+                                    .fill(FFColors.backgroundElevated)
+                                    .frame(width: 90, height: 90)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(FFColors.goldPrimary.opacity(0.5), lineWidth: 2)
+                                    )
 
-                    VStack(spacing: FFSpacing.lg) {
-                        VStack(alignment: .leading, spacing: FFSpacing.sm) {
-                            Text("Display Name")
-                                .font(FFTypography.labelMedium)
-                                .foregroundColor(FFColors.textSecondary)
+                                if let icon = selectedAvatarIcon {
+                                    Image(systemName: icon)
+                                        .font(.system(size: 40))
+                                        .foregroundStyle(FFColors.goldGradient)
+                                } else {
+                                    Text(displayName.prefix(1).uppercased())
+                                        .font(FFTypography.displayMedium)
+                                        .foregroundStyle(FFColors.goldGradient)
+                                }
+                            }
+                            .padding(.top, FFSpacing.lg)
 
-                            TextField("Your display name", text: $displayName)
-                                .textFieldStyle(.plain)
-                                .font(FFTypography.bodyLarge)
-                                .foregroundColor(FFColors.textPrimary)
+                            // Avatar grid
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: FFSpacing.md) {
+                                ForEach(avatarOptions, id: \.self) { icon in
+                                    Button {
+                                        selectedAvatarIcon = icon
+                                    } label: {
+                                        ZStack {
+                                            Circle()
+                                                .fill(selectedAvatarIcon == icon ? FFColors.goldPrimary.opacity(0.2) : FFColors.backgroundElevated)
+                                                .frame(width: 50, height: 50)
+                                                .overlay(
+                                                    Circle()
+                                                        .stroke(selectedAvatarIcon == icon ? FFColors.goldPrimary : FFColors.textTertiary.opacity(0.3), lineWidth: 1)
+                                                )
+
+                                            Image(systemName: icon)
+                                                .font(.system(size: 22))
+                                                .foregroundColor(selectedAvatarIcon == icon ? FFColors.goldPrimary : FFColors.textSecondary)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+
+                        // Form fields
+                        VStack(spacing: FFSpacing.lg) {
+                            // Display Name
+                            VStack(alignment: .leading, spacing: FFSpacing.sm) {
+                                Text("Display Name")
+                                    .font(FFTypography.labelMedium)
+                                    .foregroundColor(FFColors.textSecondary)
+
+                                TextField("Your display name", text: $displayName)
+                                    .textFieldStyle(.plain)
+                                    .font(FFTypography.bodyLarge)
+                                    .foregroundColor(FFColors.textPrimary)
+                                    .padding()
+                                    .background {
+                                        RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                                            .fill(FFColors.backgroundElevated)
+                                    }
+                            }
+
+                            // Username
+                            VStack(alignment: .leading, spacing: FFSpacing.sm) {
+                                Text("Username")
+                                    .font(FFTypography.labelMedium)
+                                    .foregroundColor(FFColors.textSecondary)
+
+                                HStack {
+                                    Text("@")
+                                        .font(FFTypography.bodyLarge)
+                                        .foregroundColor(FFColors.goldPrimary)
+
+                                    TextField("Your username", text: $username)
+                                        .textFieldStyle(.plain)
+                                        .font(FFTypography.bodyLarge)
+                                        .foregroundColor(FFColors.textPrimary)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                }
                                 .padding()
                                 .background {
                                     RoundedRectangle(cornerRadius: FFCornerRadius.medium)
                                         .fill(FFColors.backgroundElevated)
                                 }
-                        }
+                            }
 
-                        VStack(alignment: .leading, spacing: FFSpacing.sm) {
-                            Text("Username")
-                                .font(FFTypography.labelMedium)
-                                .foregroundColor(FFColors.textSecondary)
+                            // Favorite Genre
+                            VStack(alignment: .leading, spacing: FFSpacing.sm) {
+                                Text("Favorite Genre")
+                                    .font(FFTypography.labelMedium)
+                                    .foregroundColor(FFColors.textSecondary)
 
-                            TextField("Your username", text: $username)
-                                .textFieldStyle(.plain)
-                                .font(FFTypography.bodyLarge)
-                                .foregroundColor(FFColors.textPrimary)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .padding()
-                                .background {
-                                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
-                                        .fill(FFColors.backgroundElevated)
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: FFSpacing.sm) {
+                                        ForEach(genreOptions, id: \.self) { genre in
+                                            Button {
+                                                if selectedGenre == genre {
+                                                    selectedGenre = nil
+                                                } else {
+                                                    selectedGenre = genre
+                                                }
+                                            } label: {
+                                                Text(genre)
+                                                    .font(FFTypography.labelMedium)
+                                                    .foregroundColor(selectedGenre == genre ? FFColors.backgroundDark : FFColors.textPrimary)
+                                                    .padding(.horizontal, FFSpacing.md)
+                                                    .padding(.vertical, FFSpacing.sm)
+                                                    .background(selectedGenre == genre ? FFColors.goldPrimary : FFColors.backgroundElevated)
+                                                    .clipShape(Capsule())
+                                            }
+                                        }
+                                    }
                                 }
-                        }
-                    }
-                    .padding(.horizontal)
+                            }
 
-                    GoldButton(title: "Save Changes", fullWidth: true) {
-                        Task {
-                            if await viewModel.updateProfile(displayName: displayName, username: username) {
-                                dismiss()
+                            // Bio
+                            VStack(alignment: .leading, spacing: FFSpacing.sm) {
+                                HStack {
+                                    Text("Bio")
+                                        .font(FFTypography.labelMedium)
+                                        .foregroundColor(FFColors.textSecondary)
+
+                                    Spacer()
+
+                                    Text("\(bio.count)/150")
+                                        .font(FFTypography.caption)
+                                        .foregroundColor(bio.count > 150 ? FFColors.error : FFColors.textTertiary)
+                                }
+
+                                TextEditor(text: $bio)
+                                    .font(FFTypography.bodyMedium)
+                                    .foregroundColor(FFColors.textPrimary)
+                                    .scrollContentBackground(.hidden)
+                                    .frame(height: 80)
+                                    .padding(FFSpacing.sm)
+                                    .background {
+                                        RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                                            .fill(FFColors.backgroundElevated)
+                                    }
+                                    .onChange(of: bio) { _, newValue in
+                                        if newValue.count > 150 {
+                                            bio = String(newValue.prefix(150))
+                                        }
+                                    }
                             }
                         }
-                    }
-                    .padding(.horizontal)
-                    .disabled(viewModel.isSaving)
+                        .padding(.horizontal)
 
-                    if viewModel.isSaving {
-                        ProgressView()
-                            .tint(FFColors.goldPrimary)
-                    }
+                        // Save button
+                        GoldButton(title: "Save Changes", fullWidth: true) {
+                            Task {
+                                if await viewModel.updateProfile(
+                                    displayName: displayName,
+                                    username: username,
+                                    avatarIcon: selectedAvatarIcon,
+                                    favoriteGenre: selectedGenre,
+                                    bio: bio
+                                ) {
+                                    dismiss()
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                        .disabled(viewModel.isSaving || displayName.isEmpty || username.isEmpty)
+                        .opacity((viewModel.isSaving || displayName.isEmpty || username.isEmpty) ? 0.5 : 1)
 
-                    Spacer()
+                        if viewModel.isSaving {
+                            ProgressView()
+                                .tint(FFColors.goldPrimary)
+                        }
+
+                        Spacer(minLength: 50)
+                    }
                 }
             }
             .navigationTitle("Edit Profile")
@@ -328,6 +480,9 @@ struct EditProfileSheet: View {
             .onAppear {
                 displayName = user.displayName
                 username = user.username
+                selectedAvatarIcon = user.avatarIcon
+                selectedGenre = user.favoriteGenre
+                bio = user.bio ?? ""
             }
         }
     }

@@ -9,10 +9,9 @@ import SwiftUI
 
 struct LeaguesView: View {
     @StateObject private var viewModel = LeaguesViewModel()
+    @ObservedObject private var navigationCoordinator = NavigationCoordinator.shared
     @State private var searchText = ""
     @State private var selectedFilter: LeagueFilter = .all
-    @State private var showCreateLeague = false
-    @State private var showJoinLeague = false
 
     enum LeagueFilter: String, CaseIterable {
         case all = "All"
@@ -68,13 +67,13 @@ struct LeaguesView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button {
-                            showCreateLeague = true
+                            navigationCoordinator.showCreateLeague = true
                         } label: {
                             Label("Create League", systemImage: "plus.circle")
                         }
 
                         Button {
-                            showJoinLeague = true
+                            navigationCoordinator.showJoinLeague = true
                         } label: {
                             Label("Join League", systemImage: "person.badge.plus")
                         }
@@ -85,10 +84,10 @@ struct LeaguesView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showCreateLeague) {
+            .sheet(isPresented: $navigationCoordinator.showCreateLeague) {
                 CreateLeagueFlow(viewModel: viewModel)
             }
-            .sheet(isPresented: $showJoinLeague) {
+            .sheet(isPresented: $navigationCoordinator.showJoinLeague) {
                 JoinLeagueSheet(viewModel: viewModel)
             }
             .refreshable {
@@ -160,11 +159,11 @@ struct LeaguesView: View {
 
             HStack(spacing: FFSpacing.md) {
                 GoldButton(title: "Create", icon: "plus", style: .primary) {
-                    showCreateLeague = true
+                    navigationCoordinator.showCreateLeague = true
                 }
 
                 GoldButton(title: "Join", icon: "person.badge.plus", style: .secondary) {
-                    showJoinLeague = true
+                    navigationCoordinator.showJoinLeague = true
                 }
             }
 
@@ -295,8 +294,8 @@ struct CreateLeagueSheet: View {
                             Task {
                                 let settings = LeagueSettings(
                                     draftType: draftType,
-                                    scoringMode: scoringMode,
-                                    moviesPerPlayer: moviesPerPlayer
+                                    moviesPerPlayer: moviesPerPlayer,
+                                    scoringMode: scoringMode
                                 )
                                 if await viewModel.createLeague(
                                     name: leagueName,

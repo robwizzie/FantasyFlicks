@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import Combine
 
 // MARK: - Create League Flow
 
@@ -855,8 +856,8 @@ struct ReviewStep: View {
                     GoldButton(
                         title: "Create League",
                         icon: "plus.circle.fill",
-                        fullWidth: true,
-                        isLoading: viewModel.isCreating
+                        isLoading: viewModel.isCreating,
+                        fullWidth: true
                     ) {
                         Task {
                             if await viewModel.createLeague(

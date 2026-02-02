@@ -53,10 +53,12 @@ struct FantasyFlicksApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if authService.isAuthenticated {
-                    MainTabView()
-                } else {
+                if !authService.isAuthenticated {
                     OnboardingView()
+                } else if !authService.hasCompletedProfileSetup {
+                    ProfileSetupView()
+                } else {
+                    MainTabView()
                 }
             }
             .ffTheme()

@@ -28,6 +28,7 @@ final class AuthenticationService: ObservableObject {
     @Published private(set) var currentUser: FFUser?
     @Published private(set) var isAuthenticated = false
     @Published private(set) var isLoading = false
+    @Published private(set) var hasCompletedProfileSetup = false
     @Published var error: String?
 
     // MARK: - Private Properties
@@ -70,6 +71,7 @@ final class AuthenticationService: ObservableObject {
                 } else {
                     self?.currentUser = nil
                     self?.isAuthenticated = false
+                    self?.hasCompletedProfileSetup = false
                 }
             }
         }
@@ -194,6 +196,7 @@ final class AuthenticationService: ObservableObject {
             GIDSignIn.sharedInstance.signOut()
             currentUser = nil
             isAuthenticated = false
+            hasCompletedProfileSetup = false
         } catch {
             self.error = error.localizedDescription
         }
@@ -221,6 +224,7 @@ final class AuthenticationService: ObservableObject {
                 let userEmail = data["email"] as? String ?? firebaseUser.email ?? ""
                 let avatarURLString = data["avatarURL"] as? String
                 let avatarURL = avatarURLString.flatMap { URL(string: $0) }
+                let profileSetupComplete = data["hasCompletedProfileSetup"] as? Bool ?? false
 
                 currentUser = FFUser(
                     id: userId,
@@ -228,6 +232,7 @@ final class AuthenticationService: ObservableObject {
                     displayName: displayName,
                     email: userEmail,
                     avatarURL: avatarURL,
+                    avatarIcon: data["avatarIcon"] as? String,
                     totalLeagues: data["totalLeagues"] as? Int ?? 0,
                     leaguesWon: data["leaguesWon"] as? Int ?? 0,
                     totalMoviesDrafted: data["totalMoviesDrafted"] as? Int ?? 0,
@@ -237,9 +242,13 @@ final class AuthenticationService: ObservableObject {
                     notificationsEnabled: data["notificationsEnabled"] as? Bool ?? true,
                     draftReminderMinutes: data["draftReminderMinutes"] as? Int ?? 30,
                     friendIds: data["friendIds"] as? [String] ?? [],
-                    blockedUserIds: data["blockedUserIds"] as? [String] ?? []
+                    blockedUserIds: data["blockedUserIds"] as? [String] ?? [],
+                    hasCompletedProfileSetup: profileSetupComplete,
+                    favoriteGenre: data["favoriteGenre"] as? String,
+                    bio: data["bio"] as? String
                 )
                 isAuthenticated = true
+                hasCompletedProfileSetup = profileSetupComplete
             } else {
                 // Create new user - requires network
                 await createNewUser(firebaseUser: firebaseUser, email: email)
@@ -278,13 +287,17 @@ final class AuthenticationService: ObservableObject {
             notificationsEnabled: true,
             draftReminderMinutes: 30,
             friendIds: [],
-            blockedUserIds: []
+            blockedUserIds: [],
+            hasCompletedProfileSetup: false,
+            favoriteGenre: nil,
+            bio: nil
         )
 
         // Try to save to Firestore (will queue if offline)
         do {
             try await db.collection("users").document(userId).setData([
                 "username": newUser.username,
+                "usernameLowercase": newUser.username.lowercased(),
                 "displayName": newUser.displayName,
                 "email": newUser.email,
                 "avatarURL": newUser.avatarURL?.absoluteString as Any,
@@ -297,6 +310,7 @@ final class AuthenticationService: ObservableObject {
                 "achievementIds": newUser.achievementIds,
                 "notificationsEnabled": newUser.notificationsEnabled,
                 "draftReminderMinutes": newUser.draftReminderMinutes,
+                "hasCompletedProfileSetup": false,
                 "createdAt": FieldValue.serverTimestamp()
             ])
         } catch {
@@ -306,6 +320,81 @@ final class AuthenticationService: ObservableObject {
 
         currentUser = newUser
         isAuthenticated = true
+        hasCompletedProfileSetup = false
+    }
+
+    // MARK: - Username Validation
+
+    /// Reserved usernames that cannot be used
+    private static let reservedUsernames: Set<String> = [
+        "admin", "administrator", "support", "help", "moderator", "mod",
+        "fantasyflicks", "fantasy_flicks", "official", "system", "root",
+        "null", "undefined", "anonymous", "user", "guest"
+    ]
+
+    /// Check if a username is available (case-insensitive)
+    func checkUsernameAvailability(_ username: String) async -> Bool {
+        let lowercasedUsername = username.lowercased()
+
+        // Check reserved usernames
+        if Self.reservedUsernames.contains(lowercasedUsername) {
+            return false
+        }
+
+        do {
+            let snapshot = try await db.collection("users")
+                .whereField("usernameLowercase", isEqualTo: lowercasedUsername)
+                .limit(to: 1)
+                .getDocuments()
+
+            return snapshot.documents.isEmpty
+        } catch {
+            print("Error checking username availability: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    // MARK: - Profile Update
+
+    /// Update user profile after initial setup
+    func updateUserProfile(
+        displayName: String,
+        username: String,
+        avatarURL: URL?,
+        avatarIcon: String?,
+        favoriteGenre: String?,
+        bio: String?
+    ) async throws {
+        guard let userId = currentUser?.id else {
+            throw AuthError.userNotFound
+        }
+
+        let updateData: [String: Any] = [
+            "displayName": displayName,
+            "username": username,
+            "usernameLowercase": username.lowercased(),
+            "avatarURL": avatarURL?.absoluteString as Any,
+            "avatarIcon": avatarIcon as Any,
+            "favoriteGenre": favoriteGenre as Any,
+            "bio": bio as Any,
+            "hasCompletedProfileSetup": true
+        ]
+
+        try await db.collection("users").document(userId).updateData(updateData)
+
+        // Update local user
+        if var user = currentUser {
+            user.displayName = displayName
+            user.username = username
+            user.avatarURL = avatarURL
+            user.avatarIcon = avatarIcon
+            user.favoriteGenre = favoriteGenre
+            user.bio = bio
+            user.hasCompletedProfileSetup = true
+            currentUser = user
+        }
+
+        hasCompletedProfileSetup = true
     }
 
     // MARK: - Helper Methods

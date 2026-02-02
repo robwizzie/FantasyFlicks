@@ -94,6 +94,7 @@ enum APIConfiguration {
 /// TMDB API endpoints
 enum TMDBEndpoint: Sendable {
     case discover(year: Int, page: Int)
+    case discoverUpcomingBlockbusters(minDate: String, maxDate: String, page: Int)
     case upcoming(page: Int)
     case nowPlaying(page: Int)
     case movieDetails(id: Int)
@@ -106,7 +107,7 @@ enum TMDBEndpoint: Sendable {
 
     var path: String {
         switch self {
-        case .discover: return "/discover/movie"
+        case .discover, .discoverUpcomingBlockbusters: return "/discover/movie"
         case .upcoming: return "/movie/upcoming"
         case .nowPlaying: return "/movie/now_playing"
         case .movieDetails(let id): return "/movie/\(id)"
@@ -132,6 +133,16 @@ enum TMDBEndpoint: Sendable {
                 URLQueryItem(name: "sort_by", value: "popularity.desc"),
                 URLQueryItem(name: "with_release_type", value: "2|3"), // Theatrical releases
                 URLQueryItem(name: "with_original_language", value: "en")
+            ])
+        case .discoverUpcomingBlockbusters(let minDate, let maxDate, let page):
+            items.append(contentsOf: [
+                URLQueryItem(name: "page", value: "\(page)"),
+                URLQueryItem(name: "sort_by", value: "popularity.desc"),
+                URLQueryItem(name: "primary_release_date.gte", value: minDate),
+                URLQueryItem(name: "primary_release_date.lte", value: maxDate),
+                URLQueryItem(name: "with_release_type", value: "2|3"), // Theatrical releases
+                URLQueryItem(name: "with_original_language", value: "en"),
+                URLQueryItem(name: "vote_count.gte", value: "0") // Include movies with anticipation
             ])
         case .upcoming(let page), .nowPlaying(let page):
             items.append(URLQueryItem(name: "page", value: "\(page)"))

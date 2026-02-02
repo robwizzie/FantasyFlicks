@@ -9,6 +9,7 @@ import SwiftUI
 
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
+    @ObservedObject private var navigationCoordinator = NavigationCoordinator.shared
     @State private var showNotifications = false
     @State private var animateHero = false
     @State private var scrollOffset: CGFloat = 0
@@ -287,7 +288,7 @@ struct HomeView: View {
                     title: "Create League",
                     color: FFColors.goldPrimary
                 ) {
-                    // Create league action
+                    navigationCoordinator.showCreateLeagueFlow()
                 }
 
                 QuickActionCard(
@@ -295,7 +296,7 @@ struct HomeView: View {
                     title: "Join League",
                     color: FFColors.goldLight
                 ) {
-                    // Join league action
+                    navigationCoordinator.showJoinLeagueFlow()
                 }
 
                 QuickActionCard(
@@ -303,7 +304,7 @@ struct HomeView: View {
                     title: "Browse Movies",
                     color: FFColors.ruby
                 ) {
-                    // Browse movies action
+                    navigationCoordinator.navigateTo(.movies)
                 }
             }
             .padding(.horizontal)
@@ -322,7 +323,7 @@ struct HomeView: View {
                 Spacer()
 
                 Button {
-                    // See all leagues
+                    navigationCoordinator.navigateTo(.leagues)
                 } label: {
                     HStack(spacing: 4) {
                         Text("See All")
@@ -336,7 +337,10 @@ struct HomeView: View {
             .padding(.horizontal)
 
             if activeLeagues.isEmpty {
-                JoinLeagueCard(onCreateTap: {}, onJoinTap: {})
+                JoinLeagueCard(
+                    onCreateTap: { navigationCoordinator.showCreateLeagueFlow() },
+                    onJoinTap: { navigationCoordinator.showJoinLeagueFlow() }
+                )
                     .padding(.horizontal)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {

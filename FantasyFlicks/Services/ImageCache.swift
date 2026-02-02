@@ -129,6 +129,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
 
     @State private var loadedImage: UIImage?
     @State private var isLoading = false
+    @State private var currentURL: URL?
 
     init(
         url: URL?,
@@ -142,20 +143,32 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
 
     var body: some View {
         Group {
-            if let image = loadedImage {
+            if let image = loadedImage, currentURL == url {
                 content(Image(uiImage: image))
             } else {
                 placeholder()
-                    .task {
-                        await loadImage()
-                    }
             }
+        }
+        .task(id: url) {
+            await loadImage()
         }
     }
 
     private func loadImage() async {
-        guard let url = url, !isLoading else { return }
+        guard let url = url else {
+            loadedImage = nil
+            currentURL = nil
+            return
+        }
+
+        // If URL changed, reset the loaded image
+        if currentURL != url {
+            loadedImage = nil
+        }
+
+        guard !isLoading else { return }
         isLoading = true
+        currentURL = url
         loadedImage = await ImageCache.shared.image(for: url)
         isLoading = false
     }

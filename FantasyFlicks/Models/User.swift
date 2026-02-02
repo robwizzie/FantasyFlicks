@@ -14,6 +14,7 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
     var displayName: String
     var email: String
     var avatarURL: URL?
+    var avatarIcon: String? // SF Symbol name for default avatars
 
     // MARK: - Profile Stats
 
@@ -50,6 +51,17 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
     /// Blocked user IDs
     var blockedUserIds: [String]
 
+    // MARK: - Profile Setup
+
+    /// Whether the user has completed initial profile setup
+    var hasCompletedProfileSetup: Bool
+
+    /// User's favorite movie genre
+    var favoriteGenre: String?
+
+    /// User's bio/about me
+    var bio: String?
+
     // MARK: - Metadata
 
     let createdAt: Date
@@ -74,6 +86,7 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
         displayName: String,
         email: String,
         avatarURL: URL? = nil,
+        avatarIcon: String? = nil,
         totalLeagues: Int = 0,
         leaguesWon: Int = 0,
         totalMoviesDrafted: Int = 0,
@@ -84,6 +97,9 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
         draftReminderMinutes: Int = 30,
         friendIds: [String] = [],
         blockedUserIds: [String] = [],
+        hasCompletedProfileSetup: Bool = false,
+        favoriteGenre: String? = nil,
+        bio: String? = nil,
         createdAt: Date = Date(),
         lastActiveAt: Date = Date()
     ) {
@@ -92,6 +108,7 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
         self.displayName = displayName
         self.email = email
         self.avatarURL = avatarURL
+        self.avatarIcon = avatarIcon
         self.totalLeagues = totalLeagues
         self.leaguesWon = leaguesWon
         self.totalMoviesDrafted = totalMoviesDrafted
@@ -102,6 +119,9 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
         self.draftReminderMinutes = draftReminderMinutes
         self.friendIds = friendIds
         self.blockedUserIds = blockedUserIds
+        self.hasCompletedProfileSetup = hasCompletedProfileSetup
+        self.favoriteGenre = favoriteGenre
+        self.bio = bio
         self.createdAt = createdAt
         self.lastActiveAt = lastActiveAt
     }
@@ -142,13 +162,16 @@ extension FFUser {
         totalMoviesDrafted: 87,
         bestMovieScore: 1250.5,
         rankingPoints: 4520,
-        achievementIds: ["first_draft", "winning_streak_3", "oscar_prophet"]
+        achievementIds: ["first_draft", "winning_streak_3", "oscar_prophet"],
+        hasCompletedProfileSetup: true,
+        favoriteGenre: "Action",
+        bio: "Love blockbusters and Oscar contenders!"
     )
 
     static let sampleUsers: [FFUser] = [
         .sample,
-        FFUser(id: "user_002", username: "movieguru", displayName: "Movie Guru", email: "guru@example.com", totalLeagues: 8, leaguesWon: 2),
-        FFUser(id: "user_003", username: "boxofficeboss", displayName: "Box Office Boss", email: "boss@example.com", totalLeagues: 15, leaguesWon: 6),
-        FFUser(id: "user_004", username: "criticsChoice", displayName: "Critics Choice", email: "critic@example.com", totalLeagues: 5, leaguesWon: 1)
+        FFUser(id: "user_002", username: "movieguru", displayName: "Movie Guru", email: "guru@example.com", totalLeagues: 8, leaguesWon: 2, hasCompletedProfileSetup: true),
+        FFUser(id: "user_003", username: "boxofficeboss", displayName: "Box Office Boss", email: "boss@example.com", totalLeagues: 15, leaguesWon: 6, hasCompletedProfileSetup: true),
+        FFUser(id: "user_004", username: "criticsChoice", displayName: "Critics Choice", email: "critic@example.com", totalLeagues: 5, leaguesWon: 1, hasCompletedProfileSetup: true)
     ]
 }

@@ -48,6 +48,7 @@ struct MoviesView: View {
                                 FeaturedMovieCard(movie: featured) {
                                     selectedMovie = featured
                                 }
+                                .id(featured.id) // Force view recreation when movie changes
                                 .padding(.horizontal)
                             }
 
