@@ -574,7 +574,7 @@ struct LeagueDetailView: View {
                         showDraftRoom = true
                     }
                 } else if canStartDraft {
-                    GoldButton(title: "Start Draft Now", icon: "flag.checkered", fullWidth: true, isLoading: isStartingDraft) {
+                    GoldButton(title: "Start Draft Now", icon: "flag.checkered", isLoading: isStartingDraft, fullWidth: true) {
                         startDraft()
                     }
                 } else if league.draftStatus == .pending && !isCommissioner {
@@ -739,7 +739,7 @@ struct LeagueDetailView: View {
     private func startDraft() {
         isStartingDraft = true
         Task {
-            if let draftId = await draftViewModel.startDraft(leagueId: league.id) {
+            if await draftViewModel.startDraft(leagueId: league.id) != nil {
                 isStartingDraft = false
                 showDraftRoom = true
             } else {
