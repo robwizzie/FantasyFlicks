@@ -346,8 +346,13 @@ struct HomeView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: FFSpacing.md) {
                         ForEach(activeLeagues.prefix(3)) { league in
-                            LeagueCard(league: league, compact: true)
-                                .frame(width: 300)
+                            NavigationLink {
+                                LeagueDetailView(league: league)
+                            } label: {
+                                LeagueCard(league: league, compact: true)
+                                    .frame(width: 300)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal)
