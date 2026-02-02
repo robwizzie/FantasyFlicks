@@ -424,7 +424,8 @@ struct LeagueDetailView: View {
     }
 
     private var canStartDraft: Bool {
-        isCommissioner && league.draftStatus == .pending && league.memberCount >= 2
+        // Allow starting with 1 member for testing (change to >= 2 for production)
+        isCommissioner && league.draftStatus == .pending && league.memberCount >= 1
     }
 
     var body: some View {
