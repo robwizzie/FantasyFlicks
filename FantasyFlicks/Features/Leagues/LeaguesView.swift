@@ -413,6 +413,18 @@ struct JoinLeagueSheet: View {
 
 struct LeagueDetailView: View {
     let league: FFLeague
+    @StateObject private var draftViewModel = DraftViewModel()
+    @State private var showDraftRoom = false
+    @State private var showInviteCode = false
+    @State private var isStartingDraft = false
+
+    private var isCommissioner: Bool {
+        league.commissionerId == AuthenticationService.shared.currentUser?.id
+    }
+
+    private var canStartDraft: Bool {
+        isCommissioner && league.draftStatus == .pending && league.memberCount >= 2
+    }
 
     var body: some View {
         ZStack {
@@ -420,11 +432,34 @@ struct LeagueDetailView: View {
 
             ScrollView {
                 VStack(spacing: FFSpacing.xl) {
-                    // Header
+                    // Header with mode icon
                     VStack(spacing: FFSpacing.md) {
+                        ZStack {
+                            Circle()
+                                .fill(FFColors.goldPrimary.opacity(0.2))
+                                .frame(width: 80, height: 80)
+
+                            Image(systemName: league.settings.leagueMode.icon)
+                                .font(.system(size: 36))
+                                .foregroundStyle(FFColors.goldGradient)
+                        }
+
                         Text(league.name)
                             .font(FFTypography.displaySmall)
                             .foregroundColor(FFColors.textPrimary)
+
+                        HStack(spacing: FFSpacing.md) {
+                            Text(league.settings.leagueMode.displayName)
+                                .font(FFTypography.labelMedium)
+                                .foregroundColor(FFColors.goldPrimary)
+
+                            Text("•")
+                                .foregroundColor(FFColors.textTertiary)
+
+                            Text("\(String(league.seasonYear)) Season")
+                                .font(FFTypography.labelMedium)
+                                .foregroundColor(FFColors.textSecondary)
+                        }
 
                         if let description = league.description {
                             Text(description)
@@ -435,12 +470,17 @@ struct LeagueDetailView: View {
                     }
                     .padding()
 
-                    // Standings
-                    StandingsCard(
-                        standings: FFTeamStanding.sampleStandings,
-                        currentUserId: "user_001"
-                    )
-                    .padding(.horizontal)
+                    // Draft Status Card
+                    draftStatusCard
+                        .padding(.horizontal)
+
+                    // Quick Actions
+                    quickActionsSection
+                        .padding(.horizontal)
+
+                    // Members
+                    membersSection
+                        .padding(.horizontal)
 
                     // Settings info
                     GlassCard {
@@ -449,19 +489,304 @@ struct LeagueDetailView: View {
                                 .font(FFTypography.headlineSmall)
                                 .foregroundColor(FFColors.textPrimary)
 
+                            SettingRow(label: "Mode", value: league.settings.leagueMode.displayName)
                             SettingRow(label: "Scoring", value: league.settings.scoringMode.displayName)
                             SettingRow(label: "Draft Type", value: league.settings.draftType.displayName)
                             SettingRow(label: "Movies per Team", value: "\(league.settings.moviesPerPlayer)")
-                            SettingRow(label: "Season", value: "\(league.seasonYear)")
+                            SettingRow(label: "Pick Timer", value: formatTime(league.settings.pickTimerSeconds))
+
+                            if league.settings.tradingSettings.enabled {
+                                SettingRow(label: "Trading", value: league.settings.tradingSettings.approvalMode.displayName)
+                            } else {
+                                SettingRow(label: "Trading", value: "Disabled")
+                            }
                         }
                     }
                     .padding(.horizontal)
+
+                    // Invite Code Section (Commissioner only)
+                    if isCommissioner {
+                        inviteCodeSection
+                            .padding(.horizontal)
+                    }
+
+                    Spacer(minLength: 100)
                 }
                 .padding(.vertical)
             }
         }
         .navigationTitle("League Details")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $showDraftRoom) {
+            if let draftId = league.draftId {
+                DraftRoomView(draftId: draftId, leagueName: league.name)
+            }
+        }
+        .alert("Error", isPresented: .constant(draftViewModel.error != nil)) {
+            Button("OK") { draftViewModel.error = nil }
+        } message: {
+            Text(draftViewModel.error ?? "")
+        }
+    }
+
+    // MARK: - Draft Status Card
+
+    private var draftStatusCard: some View {
+        GlassCard(goldTint: league.draftStatus == .inProgress) {
+            VStack(spacing: FFSpacing.md) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Draft Status")
+                            .font(FFTypography.labelSmall)
+                            .foregroundColor(FFColors.textSecondary)
+
+                        HStack(spacing: FFSpacing.sm) {
+                            if league.draftStatus == .inProgress {
+                                Circle()
+                                    .fill(FFColors.ruby)
+                                    .frame(width: 8, height: 8)
+                            }
+
+                            Text(league.draftStatus.displayName)
+                                .font(FFTypography.headlineSmall)
+                                .foregroundColor(draftStatusColor)
+                        }
+                    }
+
+                    Spacer()
+
+                    if let scheduledDate = league.draftScheduledAt, league.draftStatus == .scheduled {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(scheduledDate, format: .dateTime.month().day())
+                                .font(FFTypography.titleMedium)
+                                .foregroundColor(FFColors.goldPrimary)
+
+                            Text(scheduledDate, format: .dateTime.hour().minute())
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textSecondary)
+                        }
+                    }
+                }
+
+                // Action buttons based on draft status
+                if league.draftStatus == .inProgress {
+                    GoldButton(title: "Enter Draft Room", icon: "play.fill", style: .ruby, fullWidth: true) {
+                        showDraftRoom = true
+                    }
+                } else if canStartDraft {
+                    GoldButton(title: "Start Draft Now", icon: "flag.checkered", fullWidth: true, isLoading: isStartingDraft) {
+                        startDraft()
+                    }
+                } else if league.draftStatus == .pending && !isCommissioner {
+                    Text("Waiting for commissioner to start the draft")
+                        .font(FFTypography.bodySmall)
+                        .foregroundColor(FFColors.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(FFColors.backgroundElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+                } else if league.draftStatus == .completed {
+                    HStack(spacing: FFSpacing.sm) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(FFColors.success)
+                        Text("Draft Complete - Season in Progress")
+                            .font(FFTypography.labelMedium)
+                            .foregroundColor(FFColors.success)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(FFColors.success.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+                }
+            }
+        }
+    }
+
+    private var draftStatusColor: Color {
+        switch league.draftStatus {
+        case .pending: return FFColors.textSecondary
+        case .scheduled: return FFColors.goldPrimary
+        case .inProgress: return FFColors.ruby
+        case .paused: return FFColors.warning
+        case .completed: return FFColors.success
+        }
+    }
+
+    // MARK: - Quick Actions
+
+    private var quickActionsSection: some View {
+        HStack(spacing: FFSpacing.md) {
+            QuickActionButton(icon: "person.2.fill", title: "Roster") {
+                // Navigate to roster
+            }
+
+            QuickActionButton(icon: "arrow.left.arrow.right", title: "Trades") {
+                // Navigate to trades
+            }
+
+            QuickActionButton(icon: "chart.line.uptrend.xyaxis", title: "Stats") {
+                // Navigate to stats
+            }
+
+            QuickActionButton(icon: "gearshape.fill", title: "Settings") {
+                // Navigate to settings
+            }
+        }
+    }
+
+    // MARK: - Members Section
+
+    private var membersSection: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: FFSpacing.md) {
+                HStack {
+                    Text("Members")
+                        .font(FFTypography.headlineSmall)
+                        .foregroundColor(FFColors.textPrimary)
+
+                    Spacer()
+
+                    Text("\(league.memberCount)/\(league.maxMembers)")
+                        .font(FFTypography.labelMedium)
+                        .foregroundColor(FFColors.textSecondary)
+                }
+
+                // Member list placeholder
+                ForEach(0..<min(league.memberCount, 5), id: \.self) { index in
+                    HStack(spacing: FFSpacing.md) {
+                        Circle()
+                            .fill(FFColors.goldPrimary.opacity(0.2))
+                            .frame(width: 36, height: 36)
+                            .overlay {
+                                Text("\(index + 1)")
+                                    .font(FFTypography.labelSmall)
+                                    .foregroundColor(FFColors.goldPrimary)
+                            }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(index == 0 ? "Commissioner" : "Member \(index + 1)")
+                                .font(FFTypography.labelMedium)
+                                .foregroundColor(FFColors.textPrimary)
+
+                            if index == 0 {
+                                Text("League Owner")
+                                    .font(FFTypography.caption)
+                                    .foregroundColor(FFColors.goldPrimary)
+                            }
+                        }
+
+                        Spacer()
+                    }
+                }
+
+                if league.memberCount < league.maxMembers {
+                    Text("\(league.maxMembers - league.memberCount) spots remaining")
+                        .font(FFTypography.caption)
+                        .foregroundColor(FFColors.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, FFSpacing.sm)
+                }
+            }
+        }
+    }
+
+    // MARK: - Invite Code Section
+
+    private var inviteCodeSection: some View {
+        GlassCard {
+            VStack(spacing: FFSpacing.md) {
+                HStack {
+                    Image(systemName: "person.badge.plus")
+                        .font(.system(size: 20))
+                        .foregroundColor(FFColors.goldPrimary)
+
+                    Text("Invite Members")
+                        .font(FFTypography.headlineSmall)
+                        .foregroundColor(FFColors.textPrimary)
+
+                    Spacer()
+                }
+
+                HStack {
+                    Text(league.inviteCode)
+                        .font(.system(size: 28, weight: .bold, design: .monospaced))
+                        .foregroundColor(FFColors.textPrimary)
+                        .tracking(4)
+
+                    Spacer()
+
+                    Button {
+                        UIPasteboard.general.string = league.inviteCode
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 20))
+                            .foregroundColor(FFColors.goldPrimary)
+                    }
+                }
+                .padding()
+                .background(FFColors.backgroundDark)
+                .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+
+                Text("Share this code with friends to invite them")
+                    .font(FFTypography.caption)
+                    .foregroundColor(FFColors.textSecondary)
+            }
+        }
+    }
+
+    // MARK: - Helper Methods
+
+    private func startDraft() {
+        isStartingDraft = true
+        Task {
+            if let draftId = await draftViewModel.startDraft(leagueId: league.id) {
+                isStartingDraft = false
+                showDraftRoom = true
+            } else {
+                isStartingDraft = false
+            }
+        }
+    }
+
+    private func formatTime(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        let secs = seconds % 60
+        if minutes > 0 && secs > 0 {
+            return "\(minutes)m \(secs)s"
+        } else if minutes > 0 {
+            return "\(minutes) min"
+        } else {
+            return "\(secs) sec"
+        }
+    }
+}
+
+// MARK: - Quick Action Button
+
+struct QuickActionButton: View {
+    let icon: String
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: FFSpacing.sm) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                        .fill(FFColors.backgroundElevated)
+                        .frame(height: 56)
+
+                    Image(systemName: icon)
+                        .font(.system(size: 22))
+                        .foregroundColor(FFColors.goldPrimary)
+                }
+
+                Text(title)
+                    .font(FFTypography.caption)
+                    .foregroundColor(FFColors.textSecondary)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 
