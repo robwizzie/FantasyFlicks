@@ -10,6 +10,24 @@ import SwiftUI
 import FirebaseFirestore
 import Combine
 
+// MARK: - Sort Order
+
+enum MovieSortOrder: String, CaseIterable {
+    case popularity = "Most Popular"
+    case releaseDate = "Release Date"
+    case title = "Title A-Z"
+    case titleDesc = "Title Z-A"
+
+    var icon: String {
+        switch self {
+        case .popularity: return "flame.fill"
+        case .releaseDate: return "calendar"
+        case .title: return "textformat"
+        case .titleDesc: return "textformat"
+        }
+    }
+}
+
 @MainActor
 final class DraftViewModel: ObservableObject {
 
@@ -19,11 +37,32 @@ final class DraftViewModel: ObservableObject {
     @Published private(set) var activeDrafts: [DraftInfo] = []
     @Published private(set) var completedDrafts: [DraftInfo] = []
     @Published private(set) var currentDraft: FFDraft?
-    @Published private(set) var availableMovies: [FFMovie] = []
+    @Published private(set) var allFetchedMovies: [FFMovie] = []
     @Published private(set) var isLoading = false
+    @Published private(set) var isLoadingMore = false
     @Published private(set) var isSubmittingPick = false
     @Published private(set) var remainingTime: Int = 0
+    @Published private(set) var currentPage: Int = 1
+    @Published private(set) var hasMoreMovies: Bool = true
+    @Published var sortOrder: MovieSortOrder = .popularity
     @Published var error: String?
+
+    // Computed property for available movies (filters out picked movies)
+    var availableMovies: [FFMovie] {
+        let pickedIds = Set(currentDraft?.picks.map { $0.movieId } ?? [])
+        let filtered = allFetchedMovies.filter { !pickedIds.contains(String($0.id)) }
+
+        switch sortOrder {
+        case .popularity:
+            return filtered.sorted { ($0.popularity ?? 0) > ($1.popularity ?? 0) }
+        case .releaseDate:
+            return filtered.sorted { ($0.releaseDate ?? "") > ($1.releaseDate ?? "") }
+        case .title:
+            return filtered.sorted { $0.title < $1.title }
+        case .titleDesc:
+            return filtered.sorted { $0.title > $1.title }
+        }
+    }
 
     // MARK: - Private Properties
 
@@ -31,7 +70,9 @@ final class DraftViewModel: ObservableObject {
     private let authService = AuthenticationService.shared
     private var draftsListener: ListenerRegistration?
     private var currentDraftListener: ListenerRegistration?
+    private var picksListener: ListenerRegistration?
     private var timerCancellable: AnyCancellable?
+    private var currentYear: Int = Calendar.current.component(.year, from: Date())
 
     // MARK: - Types
 
@@ -58,6 +99,7 @@ final class DraftViewModel: ObservableObject {
     deinit {
         draftsListener?.remove()
         currentDraftListener?.remove()
+        picksListener?.remove()
         timerCancellable?.cancel()
     }
 
@@ -237,19 +279,51 @@ final class DraftViewModel: ObservableObject {
 
     func loadAvailableMovies(forYear year: Int) async {
         isLoading = true
+        currentYear = year
+        currentPage = 1
+        hasMoreMovies = true
+        allFetchedMovies = []
+
         defer { isLoading = false }
 
-        // Get already picked movies
-        let pickedMovieIds = currentDraft?.picks.map { $0.movieId } ?? []
-
-        // Fetch movies from TMDB service
+        // Fetch movies from TMDB service (sorted by popularity by default)
         do {
             let response = try await TMDBService.shared.discoverMovies(year: year, page: 1)
             let movies = response.results.map { TMDBService.shared.convertToFFMovie($0) }
-            availableMovies = movies.filter { !pickedMovieIds.contains(String($0.id)) }
+            allFetchedMovies = movies
+            hasMoreMovies = response.page < response.totalPages
         } catch {
             self.error = "Failed to load movies: \(error.localizedDescription)"
         }
+    }
+
+    func loadMoreMovies() async {
+        guard !isLoadingMore && hasMoreMovies else { return }
+
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+
+        let nextPage = currentPage + 1
+
+        do {
+            let response = try await TMDBService.shared.discoverMovies(year: currentYear, page: nextPage)
+            let newMovies = response.results.map { TMDBService.shared.convertToFFMovie($0) }
+
+            // Append new movies, avoiding duplicates
+            let existingIds = Set(allFetchedMovies.map { $0.id })
+            let uniqueNewMovies = newMovies.filter { !existingIds.contains($0.id) }
+            allFetchedMovies.append(contentsOf: uniqueNewMovies)
+
+            currentPage = nextPage
+            hasMoreMovies = response.page < response.totalPages
+        } catch {
+            self.error = "Failed to load more movies: \(error.localizedDescription)"
+        }
+    }
+
+    func refreshMoviesAfterPick() {
+        // Trigger UI update by touching the draft (picks array changed)
+        objectWillChange.send()
     }
 
     // MARK: - Timer
