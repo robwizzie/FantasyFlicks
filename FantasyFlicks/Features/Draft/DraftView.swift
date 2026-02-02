@@ -138,8 +138,8 @@ struct DraftView: View {
                     )
                 } else {
                     ForEach(viewModel.activeDrafts) { draft in
-                        Button {
-                            // Navigate to draft room
+                        NavigationLink {
+                            DraftRoomView(draftId: draft.id, leagueName: draft.leagueName)
                         } label: {
                             GlassCard {
                                 VStack(spacing: FFSpacing.md) {
@@ -189,9 +189,21 @@ struct DraftView: View {
                                         .background(FFColors.warning.opacity(0.15))
                                         .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
 
-                                        GoldButton(title: "Enter Draft Room", icon: "play.fill", style: .ruby, fullWidth: true) {}
+                                        Text("Enter Draft Room")
+                                            .font(FFTypography.labelMedium)
+                                            .foregroundColor(FFColors.backgroundDark)
+                                            .frame(maxWidth: .infinity)
+                                            .padding()
+                                            .background(FFColors.ruby)
+                                            .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
                                     } else {
-                                        GoldButton(title: "Watch Draft", icon: "eye.fill", style: .secondary, fullWidth: true) {}
+                                        Text("Watch Draft")
+                                            .font(FFTypography.labelMedium)
+                                            .foregroundColor(FFColors.textPrimary)
+                                            .frame(maxWidth: .infinity)
+                                            .padding()
+                                            .background(FFColors.backgroundElevated)
+                                            .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
                                     }
                                 }
                             }

@@ -14,7 +14,7 @@ struct CreateLeagueFlow: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var viewModel: LeaguesViewModel
     @State private var currentStep: CreateLeagueStep = .mode
-    @State private var settings = CreateLeagueSettings()
+    @StateObject private var settings = CreateLeagueSettings()
 
     var body: some View {
         NavigationStack {
@@ -28,19 +28,19 @@ struct CreateLeagueFlow: View {
 
                     // Step content
                     TabView(selection: $currentStep) {
-                        ModeSelectionStep(settings: $settings, onNext: nextStep)
+                        ModeSelectionStep(settings: settings, onNext: nextStep)
                             .tag(CreateLeagueStep.mode)
 
-                        BasicInfoStep(settings: $settings, onNext: nextStep, onBack: previousStep)
+                        BasicInfoStep(settings: settings, onNext: nextStep, onBack: previousStep)
                             .tag(CreateLeagueStep.basicInfo)
 
-                        DraftSettingsStep(settings: $settings, onNext: nextStep, onBack: previousStep)
+                        DraftSettingsStep(settings: settings, onNext: nextStep, onBack: previousStep)
                             .tag(CreateLeagueStep.draftSettings)
 
-                        ScoringSettingsStep(settings: $settings, onNext: nextStep, onBack: previousStep)
+                        ScoringSettingsStep(settings: settings, onNext: nextStep, onBack: previousStep)
                             .tag(CreateLeagueStep.scoringSettings)
 
-                        TradingSettingsStep(settings: $settings, onNext: nextStep, onBack: previousStep)
+                        TradingSettingsStep(settings: settings, onNext: nextStep, onBack: previousStep)
                             .tag(CreateLeagueStep.tradingSettings)
 
                         ReviewStep(settings: settings, viewModel: viewModel, onBack: previousStep, onComplete: {
@@ -210,7 +210,7 @@ class CreateLeagueSettings: ObservableObject {
 // MARK: - Step 1: Mode Selection
 
 struct ModeSelectionStep: View {
-    @Binding var settings: CreateLeagueSettings
+    @ObservedObject var settings: CreateLeagueSettings
 
     let onNext: () -> Void
 
@@ -312,7 +312,7 @@ struct ModeCard: View {
 // MARK: - Step 2: Basic Info
 
 struct BasicInfoStep: View {
-    @Binding var settings: CreateLeagueSettings
+    @ObservedObject var settings: CreateLeagueSettings
     let onNext: () -> Void
     let onBack: () -> Void
 
@@ -346,12 +346,12 @@ struct BasicInfoStep: View {
 
                 // Max Members
                 VStack(alignment: .leading, spacing: FFSpacing.sm) {
-                    Text("League Size")
+                    Text("Max League Size")
                         .font(FFTypography.labelMedium)
                         .foregroundColor(FFColors.textSecondary)
 
                     HStack {
-                        Text("\(settings.maxMembers) members")
+                        Text("Up to \(settings.maxMembers) members")
                             .font(FFTypography.titleMedium)
                             .foregroundColor(FFColors.textPrimary)
 
@@ -408,7 +408,7 @@ struct BasicInfoStep: View {
 // MARK: - Step 3: Draft Settings
 
 struct DraftSettingsStep: View {
-    @Binding var settings: CreateLeagueSettings
+    @ObservedObject var settings: CreateLeagueSettings
     let onNext: () -> Void
     let onBack: () -> Void
 
@@ -520,7 +520,7 @@ struct DraftSettingsStep: View {
 // MARK: - Step 4: Scoring Settings
 
 struct ScoringSettingsStep: View {
-    @Binding var settings: CreateLeagueSettings
+    @ObservedObject var settings: CreateLeagueSettings
     let onNext: () -> Void
     let onBack: () -> Void
 
@@ -658,7 +658,7 @@ struct ScoringSettingsStep: View {
 // MARK: - Step 5: Trading & Free Agency Settings
 
 struct TradingSettingsStep: View {
-    @Binding var settings: CreateLeagueSettings
+    @ObservedObject var settings: CreateLeagueSettings
     let onNext: () -> Void
     let onBack: () -> Void
 
@@ -825,7 +825,7 @@ struct ReviewStep: View {
                 GlassCard {
                     VStack(spacing: FFSpacing.md) {
                         SummaryRow(label: "Mode", value: settings.leagueMode.displayName)
-                        SummaryRow(label: "League Size", value: "\(settings.maxMembers) members")
+                        SummaryRow(label: "Max League Size", value: "Up to \(settings.maxMembers) members")
                         SummaryRow(label: "Movies Per Player", value: "\(settings.moviesPerPlayer)")
                         SummaryRow(label: "Draft Type", value: settings.draftType.displayName)
                         SummaryRow(label: "Pick Timer", value: formatTime(settings.pickTimerSeconds))
