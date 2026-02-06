@@ -62,7 +62,13 @@ struct DraftView: View {
 
                         ForEach(viewModel.activeDrafts) { draft in
                             NavigationLink {
-                                DraftRoomView(draftId: draft.id, leagueName: draft.leagueName)
+                                if draft.isOscarMode, let draftId = draft.draftId {
+                                    OscarDraftView(draftId: draftId, leagueId: draft.leagueId, leagueName: draft.leagueName)
+                                } else if let draftId = draft.draftId {
+                                    DraftRoomView(draftId: draftId, leagueName: draft.leagueName)
+                                } else {
+                                    DraftRoomView(draftId: draft.id, leagueName: draft.leagueName)
+                                }
                             } label: {
                                 activeDraftCard(draft: draft)
                             }
@@ -166,8 +172,8 @@ struct DraftView: View {
 
                 // Always show "Join Draft" button for active drafts
                 HStack(spacing: FFSpacing.md) {
-                    if draft.isYourTurn {
-                        // Timer
+                    if draft.isYourTurn && viewModel.remainingTime > 0 {
+                        // Timer (only show when there's a time limit)
                         HStack {
                             Image(systemName: "clock.fill")
                                 .foregroundColor(FFColors.warning)

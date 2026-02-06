@@ -54,9 +54,9 @@ final class DraftViewModel: ObservableObject {
 
         switch sortOrder {
         case .popularity:
-            return filtered.sorted { ($0.popularity ?? 0) > ($1.popularity ?? 0) }
+            return filtered.sorted { $0.popularity > $1.popularity }
         case .releaseDate:
-            return filtered.sorted { ($0.releaseDate ?? "") > ($1.releaseDate ?? "") }
+            return filtered.sorted { ($0.releaseDate ?? .distantPast) > ($1.releaseDate ?? .distantPast) }
         case .title:
             return filtered.sorted { $0.title < $1.title }
         case .titleDesc:
@@ -78,7 +78,10 @@ final class DraftViewModel: ObservableObject {
 
     struct DraftInfo: Identifiable {
         let id: String
+        let leagueId: String
         let leagueName: String
+        let leagueMode: LeagueMode
+        let draftId: String?
         let draftStatus: DraftStatus
         let scheduledAt: Date?
         let currentRound: Int
@@ -88,6 +91,8 @@ final class DraftViewModel: ObservableObject {
         let maxMembers: Int
         let completedAt: Date?
         let moviesPerPlayer: Int
+
+        var isOscarMode: Bool { leagueMode == .oscar }
     }
 
     // MARK: - Initialization
@@ -155,7 +160,9 @@ final class DraftViewModel: ObservableObject {
         defer { isLoading = false }
 
         currentDraftListener?.remove()
+        picksListener?.remove()
 
+        // Listen to the draft document
         currentDraftListener = db.collection("drafts").document(draftId)
             .addSnapshotListener { [weak self] snapshot, error in
                 Task { @MainActor in
@@ -169,9 +176,57 @@ final class DraftViewModel: ObservableObject {
                     guard let data = snapshot?.data() else { return }
                     self.currentDraft = self.parseDraft(from: data, id: draftId)
 
-                    // Start timer if it's an active draft
+                    // Start timer if it's an active draft with a time limit
                     if let draft = self.currentDraft, draft.isActive {
-                        self.startPickTimer()
+                        if draft.pickTimerSeconds > 0 {
+                            self.startPickTimer()
+                        } else {
+                            // No time limit - cancel any existing timer
+                            self.timerCancellable?.cancel()
+                            self.remainingTime = 0
+                        }
+                    }
+                }
+            }
+
+        // Listen to the picks subcollection for real-time pick tracking
+        picksListener = db.collection("drafts").document(draftId)
+            .collection("picks")
+            .order(by: "overallPickNumber")
+            .addSnapshotListener { [weak self] snapshot, error in
+                Task { @MainActor in
+                    guard let self = self else { return }
+
+                    if let error = error {
+                        self.error = "Failed to load picks: \(error.localizedDescription)"
+                        return
+                    }
+
+                    guard let documents = snapshot?.documents else { return }
+
+                    let picks = documents.map { doc -> FFDraftPick in
+                        let data = doc.data()
+                        return FFDraftPick(
+                            id: doc.documentID,
+                            draftId: draftId,
+                            teamId: data["teamId"] as? String ?? "",
+                            userId: data["userId"] as? String ?? "",
+                            movieId: data["movieId"] as? String ?? "",
+                            movieTitle: data["movieTitle"] as? String ?? "",
+                            moviePosterPath: data["moviePosterPath"] as? String,
+                            overallPickNumber: data["overallPickNumber"] as? Int ?? 0,
+                            roundNumber: data["roundNumber"] as? Int ?? 0,
+                            pickInRound: data["pickInRound"] as? Int ?? 0,
+                            pickedAt: (data["pickedAt"] as? Timestamp)?.dateValue() ?? Date(),
+                            secondsTaken: data["secondsTaken"] as? Int,
+                            wasAutoPick: data["wasAutoPick"] as? Bool ?? false
+                        )
+                    }
+
+                    // Update the draft's picks with data from subcollection
+                    if var draft = self.currentDraft {
+                        draft.picks = picks
+                        self.currentDraft = draft
                     }
                 }
             }
@@ -189,30 +244,38 @@ final class DraftViewModel: ObservableObject {
         defer { isSubmittingPick = false }
 
         let pickId = UUID().uuidString
-        let secondsTaken = draft.pickTimerSeconds - remainingTime
+        let secondsTaken: Int? = draft.pickTimerSeconds > 0 ? (draft.pickTimerSeconds - remainingTime) : nil
 
-        let pickData: [String: Any] = [
+        var pickData: [String: Any] = [
             "draftId": draft.id,
-            "teamId": userId, // For simplicity, using userId as teamId
+            "teamId": userId,
             "userId": userId,
             "movieId": movieId,
             "movieTitle": movieTitle,
-            "moviePosterPath": posterPath as Any,
             "overallPickNumber": draft.currentOverallPick,
             "roundNumber": draft.currentRound,
             "pickInRound": draft.currentPickInRound,
             "pickedAt": FieldValue.serverTimestamp(),
-            "secondsTaken": secondsTaken,
             "wasAutoPick": false
         ]
 
+        if let posterPath = posterPath {
+            pickData["moviePosterPath"] = posterPath
+        }
+
+        if let secondsTaken = secondsTaken {
+            pickData["secondsTaken"] = secondsTaken
+        }
+
         do {
-            // Add the pick
+            // Add the pick to subcollection
             try await db.collection("drafts").document(draft.id)
                 .collection("picks").document(pickId).setData(pickData)
 
-            // Update draft state
-            let nextState = calculateNextDraftState(draft: draft)
+            // Update draft state (next picker, round, etc.)
+            var nextState = calculateNextDraftState(draft: draft)
+            // Track pick count on the draft document for completion detection
+            nextState["pickCount"] = draft.picks.count + 1
             try await db.collection("drafts").document(draft.id).updateData(nextState)
 
             // Update user's total movies drafted
@@ -245,7 +308,7 @@ final class DraftViewModel: ObservableObject {
             let draftOrder = memberIds.shuffled()
 
             let draftId = UUID().uuidString
-            let draftData: [String: Any] = [
+            var draftData: [String: Any] = [
                 "leagueId": leagueId,
                 "draftType": draftType.rawValue,
                 "draftOrder": draftOrder,
@@ -256,10 +319,14 @@ final class DraftViewModel: ObservableObject {
                 "currentPickInRound": 1,
                 "currentOverallPick": 1,
                 "currentPickerId": draftOrder.first as Any,
-                "pickTimerStartedAt": FieldValue.serverTimestamp(),
                 "createdAt": FieldValue.serverTimestamp(),
                 "startedAt": FieldValue.serverTimestamp()
             ]
+
+            // Only set timer start if there's a time limit
+            if pickTimerSeconds > 0 {
+                draftData["pickTimerStartedAt"] = FieldValue.serverTimestamp()
+            }
 
             try await db.collection("drafts").document(draftId).setData(draftData)
 
@@ -378,9 +445,14 @@ final class DraftViewModel: ObservableObject {
         let currentPickerId = data["currentPickerId"] as? String
         let isYourTurn = currentPickerId == userId && draftStatus == .inProgress
 
+        let leagueMode = LeagueMode(rawValue: settingsData["leagueMode"] as? String ?? "") ?? .boxOffice
+
         return DraftInfo(
             id: document.documentID,
+            leagueId: document.documentID,
             leagueName: data["name"] as? String ?? "Unknown League",
+            leagueMode: leagueMode,
+            draftId: data["draftId"] as? String,
             draftStatus: draftStatus,
             scheduledAt: scheduledAt,
             currentRound: data["currentRound"] as? Int ?? 1,
@@ -446,11 +518,14 @@ final class DraftViewModel: ObservableObject {
 
         // Check if draft is complete
         if nextOverallPick > draft.totalPicks {
-            return [
+            var completedState: [String: Any] = [
                 "status": DraftStatus.completed.rawValue,
                 "currentOverallPick": nextOverallPick,
                 "completedAt": FieldValue.serverTimestamp()
             ]
+            // Clear the current picker since draft is done
+            completedState["currentPickerId"] = NSNull()
+            return completedState
         }
 
         let nextRound = ((nextOverallPick - 1) / totalPlayers) + 1
@@ -466,12 +541,18 @@ final class DraftViewModel: ObservableObject {
 
         let nextPickerId = draft.draftOrder[nextPickerIndex]
 
-        return [
+        var nextState: [String: Any] = [
             "currentRound": nextRound,
             "currentPickInRound": nextPickInRound,
             "currentOverallPick": nextOverallPick,
-            "currentPickerId": nextPickerId,
-            "pickTimerStartedAt": FieldValue.serverTimestamp()
+            "currentPickerId": nextPickerId
         ]
+
+        // Only set timer start if there's a time limit
+        if draft.pickTimerSeconds > 0 {
+            nextState["pickTimerStartedAt"] = FieldValue.serverTimestamp()
+        }
+
+        return nextState
     }
 }

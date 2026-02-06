@@ -175,8 +175,23 @@ struct DraftRoomView: View {
 
             Spacer()
 
-            // Timer
-            TimerView(remainingTime: viewModel.remainingTime)
+            // Timer (hidden when no time limit)
+            if let draft = viewModel.currentDraft, draft.pickTimerSeconds > 0 {
+                TimerView(remainingTime: viewModel.remainingTime)
+            } else {
+                // No time limit indicator
+                HStack(spacing: 4) {
+                    Image(systemName: "infinity")
+                        .font(.system(size: 14))
+                    Text("No Limit")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundColor(FFColors.goldPrimary)
+                .padding(.horizontal, FFSpacing.md)
+                .padding(.vertical, FFSpacing.sm)
+                .background(FFColors.goldPrimary.opacity(0.15))
+                .clipShape(Capsule())
+            }
         }
         .padding()
         .background(FFColors.backgroundElevated)
@@ -190,7 +205,13 @@ struct DraftRoomView: View {
                 let isMyTurn = draft.currentPickerId == AuthenticationService.shared.currentUser?.id
 
                 HStack(spacing: FFSpacing.md) {
-                    if isMyTurn {
+                    if draft.isComplete {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(FFColors.success)
+                        Text("Draft Complete!")
+                            .font(FFTypography.headlineSmall)
+                            .foregroundColor(FFColors.success)
+                    } else if isMyTurn {
                         Circle()
                             .fill(FFColors.goldPrimary)
                             .frame(width: 10, height: 10)

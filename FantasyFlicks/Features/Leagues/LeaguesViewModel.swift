@@ -100,6 +100,49 @@ final class LeaguesViewModel: ObservableObject {
         let leagueId = UUID().uuidString
         let inviteCode = FFLeague.generateInviteCode()
 
+        var settingsDict: [String: Any] = [
+            "leagueMode": settings.leagueMode.rawValue,
+            "draftType": settings.draftType.rawValue,
+            "draftOrderType": settings.draftOrderType.rawValue,
+            "scoringMode": settings.scoringMode.rawValue,
+            "scoringDirection": settings.scoringDirection.rawValue,
+            "boxOfficeCutoff": settings.boxOfficeCutoff.rawValue,
+            "moviesPerPlayer": settings.moviesPerPlayer,
+            "pickTimerSeconds": settings.pickTimerSeconds,
+            "tradingSettings": [
+                "enabled": settings.tradingSettings.enabled,
+                "approvalMode": settings.tradingSettings.approvalMode.rawValue,
+                "reviewPeriodHours": settings.tradingSettings.reviewPeriodHours
+            ],
+            "freeAgencySettings": [
+                "enabled": settings.freeAgencySettings.enabled,
+                "waiverPeriodHours": settings.freeAgencySettings.waiverPeriodHours,
+                "waiverOrder": settings.freeAgencySettings.waiverOrder.rawValue,
+                "allowDroppingShowingMovies": settings.freeAgencySettings.allowDroppingShowingMovies
+            ],
+            "movieFilters": [
+                "theatricalOnly": settings.movieFilters.theatricalOnly,
+                "minimumBudget": settings.movieFilters.minimumBudget as Any,
+                "excludedGenreIds": settings.movieFilters.excludedGenreIds
+            ]
+        ]
+
+        // Add Oscar settings if in Oscar mode
+        if let oscarSettings = settings.oscarSettings {
+            var oscarDict: [String: Any] = [
+                "draftStyle": oscarSettings.draftStyle.rawValue,
+                "allowDuplicatePicks": oscarSettings.allowDuplicatePicks,
+                "lockAtCeremonyStart": oscarSettings.lockAtCeremonyStart,
+                "allowPreCeremonyMoves": oscarSettings.allowPreCeremonyMoves,
+                "pointsPerCorrectPick": oscarSettings.pointsPerCorrectPick,
+                "categoryBonusPoints": oscarSettings.categoryBonusPoints
+            ]
+            if let ceremonyDate = oscarSettings.ceremonyDate {
+                oscarDict["ceremonyDate"] = Timestamp(date: ceremonyDate)
+            }
+            settingsDict["oscarSettings"] = oscarDict
+        }
+
         let leagueData: [String: Any] = [
             "name": name,
             "description": description as Any,
@@ -111,32 +154,7 @@ final class LeaguesViewModel: ObservableObject {
             "draftStatus": DraftStatus.pending.rawValue,
             "seasonYear": Calendar.current.component(.year, from: Date()),
             "isSeasonComplete": false,
-            "settings": [
-                "leagueMode": settings.leagueMode.rawValue,
-                "draftType": settings.draftType.rawValue,
-                "draftOrderType": settings.draftOrderType.rawValue,
-                "scoringMode": settings.scoringMode.rawValue,
-                "scoringDirection": settings.scoringDirection.rawValue,
-                "boxOfficeCutoff": settings.boxOfficeCutoff.rawValue,
-                "moviesPerPlayer": settings.moviesPerPlayer,
-                "pickTimerSeconds": settings.pickTimerSeconds,
-                "tradingSettings": [
-                    "enabled": settings.tradingSettings.enabled,
-                    "approvalMode": settings.tradingSettings.approvalMode.rawValue,
-                    "reviewPeriodHours": settings.tradingSettings.reviewPeriodHours
-                ],
-                "freeAgencySettings": [
-                    "enabled": settings.freeAgencySettings.enabled,
-                    "waiverPeriodHours": settings.freeAgencySettings.waiverPeriodHours,
-                    "waiverOrder": settings.freeAgencySettings.waiverOrder.rawValue,
-                    "allowDroppingShowingMovies": settings.freeAgencySettings.allowDroppingShowingMovies
-                ],
-                "movieFilters": [
-                    "theatricalOnly": settings.movieFilters.theatricalOnly,
-                    "minimumBudget": settings.movieFilters.minimumBudget as Any,
-                    "excludedGenreIds": settings.movieFilters.excludedGenreIds
-                ]
-            ],
+            "settings": settingsDict,
             "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
         ]
@@ -338,6 +356,20 @@ final class LeaguesViewModel: ObservableObject {
             allowDroppingShowingMovies: freeAgencyData["allowDroppingShowingMovies"] as? Bool ?? false
         )
 
+        // Parse Oscar settings if present
+        var oscarSettings: OscarModeSettings? = nil
+        if let oscarData = settingsData["oscarSettings"] as? [String: Any] {
+            oscarSettings = OscarModeSettings(
+                draftStyle: OscarDraftStyle(rawValue: oscarData["draftStyle"] as? String ?? "") ?? .anyCategory,
+                allowDuplicatePicks: oscarData["allowDuplicatePicks"] as? Bool ?? false,
+                lockAtCeremonyStart: oscarData["lockAtCeremonyStart"] as? Bool ?? true,
+                allowPreCeremonyMoves: oscarData["allowPreCeremonyMoves"] as? Bool ?? true,
+                ceremonyDate: (oscarData["ceremonyDate"] as? Timestamp)?.dateValue(),
+                pointsPerCorrectPick: oscarData["pointsPerCorrectPick"] as? Double ?? 1.0,
+                categoryBonusPoints: oscarData["categoryBonusPoints"] as? Double ?? 2.0
+            )
+        }
+
         let settings = LeagueSettings(
             leagueMode: LeagueMode(rawValue: settingsData["leagueMode"] as? String ?? "") ?? .boxOffice,
             draftType: DraftType(rawValue: settingsData["draftType"] as? String ?? "") ?? .serpentine,
@@ -350,6 +382,7 @@ final class LeaguesViewModel: ObservableObject {
             boxOfficeCutoff: BoxOfficeCutoff(rawValue: settingsData["boxOfficeCutoff"] as? String ?? "") ?? .yearEnd,
             tradingSettings: tradingSettings,
             freeAgencySettings: freeAgencySettings,
+            oscarSettings: oscarSettings,
             movieFilters: movieFilters
         )
 
