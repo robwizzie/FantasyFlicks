@@ -379,9 +379,9 @@ struct OscarDraftView: View {
             VStack(spacing: FFSpacing.lg) {
                 // Stats header
                 HStack(spacing: FFSpacing.lg) {
-                    StatBubble(value: "\(viewModel.myPicks.count)", label: "Picks", color: FFColors.goldPrimary)
-                    StatBubble(value: "\(viewModel.totalRounds)", label: "Total", color: FFColors.textSecondary)
-                    StatBubble(
+                    OscarStatBubble(value: "\(viewModel.myPicks.count)", label: "Picks", color: FFColors.goldPrimary)
+                    OscarStatBubble(value: "\(viewModel.totalRounds)", label: "Total", color: FFColors.textSecondary)
+                    OscarStatBubble(
                         value: "\(viewModel.totalRounds - viewModel.myPicks.count)",
                         label: "Remaining",
                         color: viewModel.myPicks.count < viewModel.totalRounds ? FFColors.ruby : FFColors.success
@@ -644,9 +644,9 @@ struct OscarDraftView: View {
     }
 }
 
-// MARK: - Stat Bubble
+// MARK: - Oscar Stat Bubble
 
-private struct StatBubble: View {
+private struct OscarStatBubble: View {
     let value: String
     let label: String
     let color: Color

@@ -66,23 +66,13 @@ struct CreateLeagueFlow: View {
 
     private func nextStep() {
         withAnimation {
-            var next = currentStep.next
-            // Skip trading settings step for Oscar mode
-            if settings.leagueMode == .oscar && next == .tradingSettings {
-                next = .review
-            }
-            currentStep = next
+            currentStep = currentStep.next
         }
     }
 
     private func previousStep() {
         withAnimation {
-            var prev = currentStep.previous
-            // Skip trading settings step for Oscar mode
-            if settings.leagueMode == .oscar && prev == .tradingSettings {
-                prev = .scoringSettings
-            }
-            currentStep = prev
+            currentStep = currentStep.previous
         }
     }
 }
@@ -170,7 +160,6 @@ class CreateLeagueSettings: ObservableObject {
     // Oscar Settings
     @Published var oscarDraftStyle: OscarDraftStyle = .anyCategory
     @Published var allowDuplicateOscarPicks: Bool = false
-    @Published var ceremonyDate: Date = OscarModeSettings.defaultCeremonyDate(year: Calendar.current.component(.year, from: Date()) + 1)
 
     // Trading Settings
     @Published var tradingEnabled: Bool = true
@@ -186,10 +175,11 @@ class CreateLeagueSettings: ObservableObject {
     func toLeagueSettings() -> LeagueSettings {
         var oscarSettings: OscarModeSettings? = nil
         if leagueMode == .oscar {
+            let oscarYear = Calendar.current.component(.year, from: Date()) + 1
             oscarSettings = OscarModeSettings(
                 draftStyle: oscarDraftStyle,
                 allowDuplicatePicks: allowDuplicateOscarPicks,
-                ceremonyDate: ceremonyDate
+                ceremonyDate: OscarModeSettings.ceremonyDate(forOscarYear: oscarYear)
             )
         }
 
@@ -211,7 +201,7 @@ class CreateLeagueSettings: ObservableObject {
                 enabled: freeAgencyEnabled,
                 waiverPeriodHours: waiverPeriodHours,
                 waiverOrder: waiverOrder,
-                allowDroppingShowingMovies: allowDroppingShowingMovies
+                allowDroppingShowingMovies: leagueMode == .oscar ? false : allowDroppingShowingMovies
             ),
             oscarSettings: oscarSettings
         )
@@ -732,15 +722,6 @@ struct ScoringSettingsStep: View {
                 }
             }
 
-            SettingSection(title: "Ceremony Date") {
-                DatePicker("", selection: $settings.ceremonyDate, displayedComponents: .date)
-                    .datePickerStyle(.graphical)
-                    .tint(FFColors.goldPrimary)
-                    .colorScheme(.dark)
-                    .padding()
-                    .background(FFColors.backgroundElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
-            }
         }
     }
 }
@@ -848,24 +829,26 @@ struct TradingSettingsStep: View {
                             .background(FFColors.backgroundElevated)
                             .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
 
-                            // Drop showing movies
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Drop Showing Movies")
-                                        .font(FFTypography.labelMedium)
-                                        .foregroundColor(FFColors.textPrimary)
-                                    Text("Allow dropping movies after theatrical release")
-                                        .font(FFTypography.bodySmall)
-                                        .foregroundColor(FFColors.textSecondary)
+                            // Drop showing movies (Box Office / Rotten Tomatoes only; not applicable for Oscar)
+                            if settings.leagueMode != .oscar {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Drop Showing Movies")
+                                            .font(FFTypography.labelMedium)
+                                            .foregroundColor(FFColors.textPrimary)
+                                        Text("Allow dropping movies after theatrical release")
+                                            .font(FFTypography.bodySmall)
+                                            .foregroundColor(FFColors.textSecondary)
+                                    }
+                                    Spacer()
+                                    Toggle("", isOn: $settings.allowDroppingShowingMovies)
+                                        .labelsHidden()
+                                        .tint(FFColors.goldPrimary)
                                 }
-                                Spacer()
-                                Toggle("", isOn: $settings.allowDroppingShowingMovies)
-                                    .labelsHidden()
-                                    .tint(FFColors.goldPrimary)
+                                .padding()
+                                .background(FFColors.backgroundElevated)
+                                .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
                             }
-                            .padding()
-                            .background(FFColors.backgroundElevated)
-                            .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
                         }
                     }
                 }
@@ -923,9 +906,14 @@ struct ReviewStep: View {
                         Divider().background(FFColors.textTertiary.opacity(0.3))
 
                         if settings.leagueMode == .oscar {
+                            let oscarYear = Calendar.current.component(.year, from: Date()) + 1
+                            let ceremonyDate = OscarModeSettings.ceremonyDate(forOscarYear: oscarYear)
                             SummaryRow(label: "Draft Style", value: settings.oscarDraftStyle.displayName)
                             SummaryRow(label: "Duplicate Picks", value: settings.allowDuplicateOscarPicks ? "Allowed" : "Not Allowed")
-                            SummaryRow(label: "Ceremony Date", value: settings.ceremonyDate.formatted(.dateTime.month().day().year()))
+                            SummaryRow(label: "Ceremony", value: ceremonyDate.formatted(.dateTime.month().day().year()))
+                            Divider().background(FFColors.textTertiary.opacity(0.3))
+                            SummaryRow(label: "Trading", value: settings.tradingEnabled ? settings.tradeApprovalMode.displayName : "Disabled")
+                            SummaryRow(label: "Free Agency", value: settings.freeAgencyEnabled ? "Enabled" : "Disabled")
                         } else {
                             SummaryRow(label: "Scoring", value: settings.scoringMode.shortName)
                             SummaryRow(label: "Goal", value: settings.scoringDirection.displayName)

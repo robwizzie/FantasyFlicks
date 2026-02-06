@@ -267,7 +267,7 @@ struct EditProfileSheet: View {
 
     private let avatarOptions = [
         "film.fill", "star.fill", "popcorn.fill", "ticket.fill",
-        "tv.fill", "camera.fill", "sparkles", "person.crop.circle.fill"
+        "tv.fill", "camera.fill", "sparkles", "popcorn.fill"
     ]
 
     private let genreOptions = [

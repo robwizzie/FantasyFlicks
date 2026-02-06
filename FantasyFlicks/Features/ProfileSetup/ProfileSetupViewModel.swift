@@ -97,7 +97,7 @@ enum DefaultAvatar: String, CaseIterable, Identifiable {
     case tv = "tv.fill"
     case camera = "camera.fill"
     case sparkles = "sparkles"
-    case person = "person.crop.circle.fill"
+    case popcorn = "popcorn.fill"
 
     var id: String { rawValue }
 }

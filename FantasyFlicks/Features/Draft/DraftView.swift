@@ -199,7 +199,13 @@ struct DraftView: View {
                     .foregroundColor(FFColors.backgroundDark)
                     .padding(.horizontal, FFSpacing.lg)
                     .padding(.vertical, FFSpacing.sm)
-                    .background(draft.isYourTurn ? FFColors.ruby : FFColors.goldGradientHorizontal)
+                    .background {
+                        if draft.isYourTurn {
+                            FFColors.ruby
+                        } else {
+                            FFColors.goldGradientHorizontal
+                        }
+                    }
                     .clipShape(Capsule())
                 }
             }

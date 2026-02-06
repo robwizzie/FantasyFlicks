@@ -173,8 +173,21 @@ struct OscarModeSettings: Codable, Hashable, Sendable {
         self.categoryBonusPoints = categoryBonusPoints
     }
 
-    /// Default Oscar ceremony date (last Sunday of February)
-    static func defaultCeremonyDate(year: Int) -> Date {
+    /// Fixed Oscar ceremony date for a given Oscar year. Not user-configurable.
+    /// 2026 ceremony is March 15, 2026; other years use last Sunday of February as fallback.
+    static func ceremonyDate(forOscarYear year: Int) -> Date {
+        if year == 2026 {
+            var components = DateComponents()
+            components.year = 2026
+            components.month = 3
+            components.day = 15
+            return Calendar.current.date(from: components) ?? defaultCeremonyDate(year: year)
+        }
+        return defaultCeremonyDate(year: year)
+    }
+
+    /// Fallback Oscar ceremony date (last Sunday of February) when no fixed date is set.
+    private static func defaultCeremonyDate(year: Int) -> Date {
         var components = DateComponents()
         components.year = year
         components.month = 2
