@@ -561,13 +561,26 @@ struct OscarDraftView: View {
                     }
 
                     // Odds attribution
-                    HStack(spacing: 4) {
-                        Image(systemName: "info.circle")
-                            .font(.system(size: 11))
-                        Text("Odds are approximate expert consensus estimates and may not reflect real-time markets.")
-                            .font(.system(size: 11))
+                    VStack(spacing: 4) {
+                        if viewModel.hasLiveOdds {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(FFColors.success)
+                                    .frame(width: 6, height: 6)
+                                Text("Live odds powered by Kalshi")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundColor(FFColors.textSecondary)
+                        } else {
+                            HStack(spacing: 4) {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 11))
+                                Text("Showing estimated odds. Live Kalshi odds unavailable.")
+                                    .font(.system(size: 11))
+                            }
+                            .foregroundColor(FFColors.textTertiary)
+                        }
                     }
-                    .foregroundColor(FFColors.textTertiary)
                     .padding()
                     .padding(.bottom, 40)
                 }
@@ -1470,7 +1483,7 @@ struct OscarConfirmPickSheet: View {
                                 Text(odds)
                                     .font(FFTypography.titleMedium)
                                     .foregroundColor(FFColors.goldPrimary)
-                                Text("Est. Odds")
+                                Text(viewModel.hasLiveOdds ? "Kalshi Odds" : "Est. Odds")
                                     .font(FFTypography.caption)
                                     .foregroundColor(FFColors.textTertiary)
                             }

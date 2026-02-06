@@ -690,10 +690,9 @@ extension OscarNominee {
 
 extension OscarNominee {
 
-    /// Approximate expert consensus win probabilities
-    /// These are estimates based on general prediction trends, NOT live data from any specific source.
-    /// For real-time odds, consider integrating a prediction market API (Kalshi, Polymarket, etc.)
-    static let expertOdds: [String: Double] = [
+    /// Win probabilities - overwritten at runtime with live Kalshi prediction market data.
+    /// The static values below are fallback estimates used when Kalshi is unavailable.
+    static var expertOdds: [String: Double] = [
         // Best Picture
         "Anora_best_picture": 0.32,
         "The Brutalist_best_picture": 0.22,

@@ -32,9 +32,11 @@ final class OscarDraftViewModel: ObservableObject {
     @Published private(set) var oscarSettings: OscarModeSettings?
     @Published var error: String?
 
-    // MARK: - Poster, Sorting & Favorites
+    // MARK: - Poster, Sorting, Favorites & Odds
 
     @Published private(set) var posterPaths: [Int: String] = [:]
+    @Published private(set) var hasLiveOdds = false
+    @Published private(set) var liveOddsCategories = 0
     @Published var sortOption: NomineeSortOption = .odds
     @Published var favoriteNomineeIds: Set<String> = []
     @Published var playerCategoryFilter: String? = nil // Filter for Players tab
@@ -291,7 +293,8 @@ final class OscarDraftViewModel: ObservableObject {
         // Load nominees
         await loadNominees(year: Calendar.current.component(.year, from: Date()))
 
-        // Fetch poster images from TMDB
+        // Fetch live odds from Kalshi and poster images from TMDB
+        await loadKalshiOdds()
         await loadPosterPaths()
     }
 
@@ -366,6 +369,24 @@ final class OscarDraftViewModel: ObservableObject {
 
         // Also sync from Firestore for real-time winner updates during ceremony
         OscarDataService.shared.syncFromFirestore(year: year)
+    }
+
+    // MARK: - Load Kalshi Odds
+
+    /// Fetch live odds from Kalshi prediction markets and override static estimates
+    func loadKalshiOdds() async {
+        let result = await KalshiOddsService.shared.fetchOscarOdds(nominees: nominees)
+
+        if !result.odds.isEmpty {
+            // Override static estimates with live market data
+            for (key, value) in result.odds {
+                OscarNominee.expertOdds[key] = value
+            }
+            hasLiveOdds = true
+            liveOddsCategories = result.categoriesFetched
+            // Trigger UI refresh since odds changed
+            objectWillChange.send()
+        }
     }
 
     // MARK: - Load Poster Paths
