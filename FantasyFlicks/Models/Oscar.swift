@@ -278,6 +278,7 @@ enum OddsSource: String, Codable, Sendable {
         case .kalshi: return "Kalshi"
         case .polymarket: return "Polymarket"
         case .goldDerby: return "Gold Derby"
+        case .expertConsensus: return "Expert Consensus"
         case .manual: return "Manual"
         }
     }
