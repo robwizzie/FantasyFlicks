@@ -32,6 +32,20 @@ final class OscarDraftViewModel: ObservableObject {
     @Published private(set) var oscarSettings: OscarModeSettings?
     @Published var error: String?
 
+    // MARK: - Poster, Sorting & Favorites
+
+    @Published private(set) var posterPaths: [Int: String] = [:]
+    @Published var sortOption: NomineeSortOption = .odds
+    @Published var favoriteNomineeIds: Set<String> = []
+    @Published var playerCategoryFilter: String? = nil // Filter for Players tab
+
+    enum NomineeSortOption: String, CaseIterable {
+        case odds = "Odds"
+        case rostered = "Rostered"
+        case category = "Category"
+        case favorites = "Favorites"
+    }
+
     // MARK: - Computed Properties
 
     var myPicks: [OscarPick] {
@@ -90,6 +104,78 @@ final class OscarDraftViewModel: ObservableObject {
     var totalPicksMade: Int { allPicks.count }
     var totalPicksNeeded: Int { draftOrder.count * totalRounds }
     var isDraftComplete: Bool { draftStatus == .completed }
+
+    // MARK: - Poster URL
+
+    /// Get poster URL for a nominee, using fetched poster paths as fallback
+    func posterURL(for nominee: OscarNominee) -> URL? {
+        if let url = nominee.posterURL { return url }
+        guard let movieId = nominee.movieId, let path = posterPaths[movieId] else { return nil }
+        return URL(string: "https://image.tmdb.org/t/p/w200\(path)")
+    }
+
+    // MARK: - Favorites
+
+    func toggleFavorite(_ nomineeId: String) {
+        if favoriteNomineeIds.contains(nomineeId) {
+            favoriteNomineeIds.remove(nomineeId)
+        } else {
+            favoriteNomineeIds.insert(nomineeId)
+        }
+    }
+
+    func isFavorite(_ nomineeId: String) -> Bool {
+        favoriteNomineeIds.contains(nomineeId)
+    }
+
+    // MARK: - All Nominees Sorted (for Players tab)
+
+    /// All nominees in a flat list, sorted by the selected option
+    var allNomineesSorted: [OscarNominee] {
+        var result = nominees
+
+        // Apply player category filter
+        if let catFilter = playerCategoryFilter {
+            result = result.filter { $0.categoryId == catFilter }
+        }
+
+        // Apply search
+        if !searchQuery.isEmpty {
+            let q = searchQuery.lowercased()
+            result = result.filter {
+                $0.name.lowercased().contains(q) ||
+                ($0.movieTitle?.lowercased().contains(q) ?? false) ||
+                ($0.details?.lowercased().contains(q) ?? false)
+            }
+        }
+
+        // Apply sort
+        switch sortOption {
+        case .odds:
+            result.sort { ($0.odds ?? 0) > ($1.odds ?? 0) }
+        case .rostered:
+            result.sort {
+                rosterPercentage(for: $0.id, categoryId: $0.categoryId) >
+                rosterPercentage(for: $1.id, categoryId: $1.categoryId)
+            }
+        case .category:
+            result.sort {
+                let aOrder = $0.category?.order ?? 99
+                let bOrder = $1.category?.order ?? 99
+                if aOrder != bOrder { return aOrder < bOrder }
+                return ($0.odds ?? 0) > ($1.odds ?? 0)
+            }
+        case .favorites:
+            result.sort {
+                let aFav = favoriteNomineeIds.contains($0.id)
+                let bFav = favoriteNomineeIds.contains($1.id)
+                if aFav != bFav { return aFav }
+                return ($0.odds ?? 0) > ($1.odds ?? 0)
+            }
+        }
+
+        return result
+    }
 
     // MARK: - Private Properties
 
@@ -204,6 +290,9 @@ final class OscarDraftViewModel: ObservableObject {
 
         // Load nominees
         await loadNominees(year: Calendar.current.component(.year, from: Date()))
+
+        // Fetch poster images from TMDB
+        await loadPosterPaths()
     }
 
     // MARK: - Search & Filter
@@ -277,6 +366,27 @@ final class OscarDraftViewModel: ObservableObject {
 
         // Also sync from Firestore for real-time winner updates during ceremony
         OscarDataService.shared.syncFromFirestore(year: year)
+    }
+
+    // MARK: - Load Poster Paths
+
+    /// Fetch poster paths from TMDB for all unique movies
+    func loadPosterPaths() async {
+        let uniqueMovieIds = Array(Set(nominees.compactMap { $0.movieId }))
+        var paths: [Int: String] = [:]
+
+        for movieId in uniqueMovieIds {
+            do {
+                let details = try await TMDBService.shared.getMovieDetails(id: movieId)
+                if let path = details.posterPath {
+                    paths[movieId] = path
+                }
+            } catch {
+                // Silently skip - poster placeholder will show
+            }
+        }
+
+        posterPaths = paths
     }
 
     // MARK: - Submit Pick

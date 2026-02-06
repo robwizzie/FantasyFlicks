@@ -14,7 +14,7 @@ struct OscarDraftView: View {
     let leagueName: String
 
     @StateObject private var viewModel = OscarDraftViewModel()
-    @State private var selectedTab: OscarDraftTab = .categories
+    @State private var selectedTab: OscarDraftTab = .board
     @State private var showConfirmPick = false
     @State private var selectedNominee: OscarNominee?
     @State private var selectedCategory: OscarCategory?
@@ -22,10 +22,11 @@ struct OscarDraftView: View {
     @Environment(\.dismiss) private var dismiss
 
     enum OscarDraftTab: String, CaseIterable {
-        case categories = "Categories"
-        case myPicks = "My Picks"
+        case board = "Board"
+        case players = "Players"
+        case myTeam = "My Team"
         case standings = "Standings"
-        case history = "History"
+        case tracker = "Tracker"
     }
 
     var body: some View {
@@ -50,16 +51,19 @@ struct OscarDraftView: View {
 
                     TabView(selection: $selectedTab) {
                         categoriesView
-                            .tag(OscarDraftTab.categories)
+                            .tag(OscarDraftTab.board)
+
+                        playersView
+                            .tag(OscarDraftTab.players)
 
                         myPicksView
-                            .tag(OscarDraftTab.myPicks)
+                            .tag(OscarDraftTab.myTeam)
 
                         standingsView
                             .tag(OscarDraftTab.standings)
 
                         historyView
-                            .tag(OscarDraftTab.history)
+                            .tag(OscarDraftTab.tracker)
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
                 }
@@ -140,7 +144,7 @@ struct OscarDraftView: View {
                         .foregroundColor(FFColors.textPrimary)
                 }
 
-                Text("Round \(viewModel.currentRound) of \(viewModel.totalRounds)")
+                Text("Rd \(viewModel.currentRound) \u{2022} Pick \(viewModel.totalPicksMade + 1) of \(viewModel.totalPicksNeeded)")
                     .font(FFTypography.caption)
                     .foregroundColor(FFColors.textSecondary)
             }
@@ -213,28 +217,52 @@ struct OscarDraftView: View {
         Group {
             if viewModel.isMyTurn {
                 HStack(spacing: FFSpacing.md) {
-                    Circle()
-                        .fill(FFColors.goldPrimary)
-                        .frame(width: 10, height: 10)
-                        .modifier(PulsingModifier())
+                    // On the clock indicator
+                    VStack(spacing: 2) {
+                        Circle()
+                            .fill(FFColors.goldPrimary)
+                            .frame(width: 10, height: 10)
+                            .modifier(PulsingModifier())
+                        if viewModel.pickTimerSeconds > 0 {
+                            Text("\(viewModel.remainingTime)s")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(viewModel.remainingTime <= 10 ? FFColors.ruby : FFColors.goldPrimary)
+                        }
+                    }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Your Pick!")
-                            .font(FFTypography.headlineSmall)
+                        Text("ON THE CLOCK")
+                            .font(.system(size: 13, weight: .heavy))
                             .foregroundColor(FFColors.goldPrimary)
-                        Text("Choose a nominee from any category")
+                        Text("Make your prediction")
                             .font(FFTypography.caption)
                             .foregroundColor(FFColors.textSecondary)
                     }
 
                     Spacer()
 
-                    Text("\(viewModel.myPicks.count)/\(viewModel.totalRounds)")
-                        .font(FFTypography.statSmall)
-                        .foregroundColor(FFColors.goldPrimary)
+                    // Pick counter pill
+                    HStack(spacing: 4) {
+                        Text("\(viewModel.myPicks.count)")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(FFColors.goldPrimary)
+                        Text("/\(viewModel.totalRounds)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(FFColors.textTertiary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(FFColors.backgroundDark)
+                    .clipShape(Capsule())
                 }
                 .padding()
-                .background(FFColors.goldPrimary.opacity(0.12))
+                .background(
+                    LinearGradient(
+                        colors: [FFColors.goldPrimary.opacity(0.15), FFColors.goldPrimary.opacity(0.05)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
             } else if viewModel.draftStatus == .inProgress {
                 HStack(spacing: FFSpacing.md) {
                     ProgressView()
@@ -247,12 +275,18 @@ struct OscarDraftView: View {
 
                     Spacer()
 
+                    // Progress bar
                     let progress = viewModel.totalPicksNeeded > 0
                         ? Double(viewModel.totalPicksMade) / Double(viewModel.totalPicksNeeded)
                         : 0
-                    Text("\(Int(progress * 100))%")
-                        .font(FFTypography.statSmall)
-                        .foregroundColor(FFColors.goldPrimary)
+                    HStack(spacing: 6) {
+                        ProgressView(value: progress)
+                            .tint(FFColors.goldPrimary)
+                            .frame(width: 60)
+                        Text("\(Int(progress * 100))%")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(FFColors.goldPrimary)
+                    }
                 }
                 .padding()
                 .background(FFColors.backgroundDark)
@@ -369,6 +403,146 @@ struct OscarDraftView: View {
             }
             .padding()
             .padding(.bottom, 60)
+        }
+    }
+
+    // MARK: - Players View (View All)
+
+    private var playersView: some View {
+        VStack(spacing: 0) {
+            // Sort options
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: FFSpacing.sm) {
+                    ForEach(OscarDraftViewModel.NomineeSortOption.allCases, id: \.self) { option in
+                        Button {
+                            withAnimation(.spring(response: 0.3)) {
+                                viewModel.sortOption = option
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: sortIcon(for: option))
+                                    .font(.system(size: 10))
+                                Text(option.rawValue)
+                                    .font(FFTypography.labelSmall)
+                            }
+                            .foregroundColor(viewModel.sortOption == option ? FFColors.backgroundDark : FFColors.textSecondary)
+                            .padding(.horizontal, FFSpacing.md)
+                            .padding(.vertical, 6)
+                            .background {
+                                if viewModel.sortOption == option {
+                                    Capsule().fill(FFColors.goldGradientHorizontal)
+                                } else {
+                                    Capsule().fill(FFColors.backgroundElevated)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, FFSpacing.xs)
+            }
+
+            // Category filter chips
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: FFSpacing.xs) {
+                    // "All" chip
+                    Button {
+                        viewModel.playerCategoryFilter = nil
+                    } label: {
+                        Text("All")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(viewModel.playerCategoryFilter == nil ? FFColors.backgroundDark : FFColors.textSecondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background {
+                                if viewModel.playerCategoryFilter == nil {
+                                    Capsule().fill(FFColors.goldPrimary)
+                                } else {
+                                    Capsule().fill(FFColors.backgroundElevated)
+                                }
+                            }
+                    }
+
+                    ForEach(OscarCategory.allCategories) { cat in
+                        Button {
+                            viewModel.playerCategoryFilter = cat.id
+                        } label: {
+                            Text(cat.shortName)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(viewModel.playerCategoryFilter == cat.id ? FFColors.backgroundDark : FFColors.textSecondary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background {
+                                    if viewModel.playerCategoryFilter == cat.id {
+                                        Capsule().fill(FFColors.goldPrimary)
+                                    } else {
+                                        Capsule().fill(FFColors.backgroundElevated)
+                                    }
+                                }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, FFSpacing.xs)
+            }
+
+            // Column headers
+            HStack(spacing: FFSpacing.sm) {
+                Text("RK")
+                    .frame(width: 24)
+                Text("NOMINEE")
+                Spacer()
+                Text("ODDS")
+                    .frame(width: 44)
+                Text("RSTD")
+                    .frame(width: 40)
+            }
+            .font(.system(size: 9, weight: .bold))
+            .foregroundColor(FFColors.textTertiary)
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+            .background(FFColors.backgroundDark)
+
+            // Nominee list
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    let sortedNominees = viewModel.allNomineesSorted
+                    ForEach(Array(sortedNominees.enumerated()), id: \.element.id) { index, nominee in
+                        PlayerRow(
+                            rank: index + 1,
+                            nominee: nominee,
+                            posterURL: viewModel.posterURL(for: nominee),
+                            isPickable: viewModel.isMyTurn && !viewModel.hasPickedCategory(nominee.categoryId),
+                            isNomineePicked: viewModel.isNomineePicked(nominee.id, in: nominee.categoryId),
+                            rosterPct: viewModel.rosterPercentageString(for: nominee.id, categoryId: nominee.categoryId),
+                            isFavorite: viewModel.isFavorite(nominee.id),
+                            onSelect: {
+                                if let cat = nominee.category {
+                                    selectedCategory = cat
+                                    selectedNominee = nominee
+                                    showConfirmPick = true
+                                }
+                            },
+                            onFavorite: {
+                                viewModel.toggleFavorite(nominee.id)
+                            }
+                        )
+
+                        Divider()
+                            .background(Color.white.opacity(0.04))
+                    }
+                }
+                .padding(.bottom, 60)
+            }
+        }
+    }
+
+    private func sortIcon(for option: OscarDraftViewModel.NomineeSortOption) -> String {
+        switch option {
+        case .odds: return "chart.bar.fill"
+        case .rostered: return "person.2.fill"
+        case .category: return "rectangle.grid.1x2.fill"
+        case .favorites: return "star.fill"
         }
     }
 
@@ -733,6 +907,7 @@ struct OscarCategoryCard: View {
                         ForEach(nominees) { nominee in
                             NomineeRow(
                                 nominee: nominee,
+                                posterURL: viewModel.posterURL(for: nominee),
                                 isPickable: isPickable && !isPicked,
                                 isNomineePicked: viewModel.isNomineePicked(nominee.id, in: category.id),
                                 rosterPct: viewModel.rosterPercentageString(for: nominee.id, categoryId: category.id),
@@ -766,6 +941,7 @@ struct OscarCategoryCard: View {
 
 struct NomineeRow: View {
     let nominee: OscarNominee
+    let posterURL: URL?
     let isPickable: Bool
     let isNomineePicked: Bool
     let rosterPct: String
@@ -774,7 +950,7 @@ struct NomineeRow: View {
     var body: some View {
         HStack(spacing: FFSpacing.md) {
             // Poster thumbnail
-            if let url = nominee.posterURL {
+            if let url = posterURL {
                 AsyncImage(url: url) { image in
                     image.resizable().aspectRatio(contentMode: .fill)
                 } placeholder: {
@@ -892,6 +1068,126 @@ struct NomineeRow: View {
             .overlay {
                 Image(systemName: "film")
                     .font(.system(size: 14))
+                    .foregroundColor(FFColors.textTertiary)
+            }
+    }
+}
+
+// MARK: - Player Row (Fantasy Football Style)
+
+struct PlayerRow: View {
+    let rank: Int
+    let nominee: OscarNominee
+    let posterURL: URL?
+    let isPickable: Bool
+    let isNomineePicked: Bool
+    let rosterPct: String
+    let isFavorite: Bool
+    let onSelect: () -> Void
+    let onFavorite: () -> Void
+
+    var body: some View {
+        HStack(spacing: FFSpacing.sm) {
+            // Rank number
+            Text("\(rank)")
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundColor(rank <= 3 ? FFColors.goldPrimary : FFColors.textTertiary)
+                .frame(width: 24)
+
+            // Poster
+            if let url = posterURL {
+                AsyncImage(url: url) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    playerPosterPlaceholder
+                }
+                .frame(width: 36, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+            } else {
+                playerPosterPlaceholder
+            }
+
+            // Info
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text(nominee.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(isNomineePicked ? FFColors.textTertiary : FFColors.textPrimary)
+                        .lineLimit(1)
+                        .strikethrough(isNomineePicked)
+
+                    if nominee.isFrontrunner {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(FFColors.ruby)
+                    }
+                }
+
+                if let movie = nominee.movieTitle {
+                    Text(movie)
+                        .font(.system(size: 11))
+                        .foregroundColor(FFColors.textTertiary)
+                        .lineLimit(1)
+                }
+
+                // Category badge
+                Text(nominee.category?.shortName ?? "")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(nominee.category?.isMajor == true ? FFColors.goldPrimary : FFColors.textTertiary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background((nominee.category?.isMajor == true ? FFColors.goldPrimary : FFColors.textTertiary).opacity(0.12))
+                    .clipShape(Capsule())
+            }
+
+            Spacer()
+
+            // Odds column
+            Text(nominee.oddsString ?? "--")
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundColor(nominee.isFrontrunner ? FFColors.goldPrimary : FFColors.textSecondary)
+                .frame(width: 44)
+
+            // Rostered column
+            Text(rosterPct)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(FFColors.textTertiary)
+                .frame(width: 40)
+
+            // Favorite star
+            Button(action: onFavorite) {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .font(.system(size: 14))
+                    .foregroundColor(isFavorite ? FFColors.goldPrimary : FFColors.textTertiary.opacity(0.5))
+            }
+            .frame(width: 28)
+
+            // Pick button (compact)
+            if isPickable && !isNomineePicked {
+                Button(action: onSelect) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(FFColors.goldGradient)
+                }
+            } else if isNomineePicked {
+                Image(systemName: "minus.circle")
+                    .font(.system(size: 18))
+                    .foregroundColor(FFColors.textTertiary.opacity(0.3))
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(isNomineePicked ? FFColors.backgroundDark.opacity(0.5) : Color.clear)
+        .opacity(isNomineePicked ? 0.6 : 1.0)
+    }
+
+    private var playerPosterPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 5)
+            .fill(FFColors.backgroundDark)
+            .frame(width: 36, height: 52)
+            .overlay {
+                Image(systemName: "film")
+                    .font(.system(size: 12))
                     .foregroundColor(FFColors.textTertiary)
             }
     }
@@ -1079,15 +1375,31 @@ struct OscarConfirmPickSheet: View {
                 FFColors.backgroundDark.ignoresSafeArea()
 
                 VStack(spacing: FFSpacing.xl) {
-                    // Trophy icon
-                    ZStack {
-                        Circle()
-                            .fill(FFColors.goldPrimary.opacity(0.2))
-                            .frame(width: 100, height: 100)
+                    // Poster or trophy icon
+                    if let url = viewModel.posterURL(for: nominee) {
+                        AsyncImage(url: url) { image in
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                                .fill(FFColors.backgroundElevated)
+                                .frame(width: 100, height: 150)
+                                .overlay {
+                                    ProgressView().tint(FFColors.goldPrimary)
+                                }
+                        }
+                        .frame(width: 100, height: 150)
+                        .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+                        .shadow(color: FFColors.goldPrimary.opacity(0.3), radius: 12)
+                    } else {
+                        ZStack {
+                            Circle()
+                                .fill(FFColors.goldPrimary.opacity(0.2))
+                                .frame(width: 100, height: 100)
 
-                        Image(systemName: "trophy.fill")
-                            .font(.system(size: 44))
-                            .foregroundStyle(FFColors.goldGradient)
+                            Image(systemName: "trophy.fill")
+                                .font(.system(size: 44))
+                                .foregroundStyle(FFColors.goldGradient)
+                        }
                     }
 
                     // Category
