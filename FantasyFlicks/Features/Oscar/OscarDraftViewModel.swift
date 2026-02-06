@@ -37,6 +37,8 @@ final class OscarDraftViewModel: ObservableObject {
     @Published private(set) var posterPaths: [Int: String] = [:]
     @Published private(set) var hasLiveOdds = false
     @Published private(set) var liveOddsCategories = 0
+    /// Number of nominee odds successfully matched from Kalshi (for verification)
+    @Published private(set) var liveOddsCount = 0
     @Published var sortOption: NomineeSortOption = .odds
     @Published var favoriteNomineeIds: Set<String> = []
     @Published var playerCategoryFilter: String? = nil // Filter for Players tab
@@ -367,8 +369,8 @@ final class OscarDraftViewModel: ObservableObject {
     // MARK: - Load Nominees
 
     func loadNominees(year: Int) async {
-        // Use bundled 97th Academy Award nominees as primary data source
-        nominees = OscarNominee.nominees97th
+        // Use bundled 98th Academy Award nominees as primary data source (March 2026)
+        nominees = OscarNominee.nominees98th
 
         // Also sync from Firestore for real-time winner updates during ceremony
         OscarDataService.shared.syncFromFirestore(year: year)
@@ -387,8 +389,11 @@ final class OscarDraftViewModel: ObservableObject {
             }
             hasLiveOdds = true
             liveOddsCategories = result.categoriesFetched
+            liveOddsCount = result.odds.count
             // Trigger UI refresh since odds changed
             objectWillChange.send()
+        } else {
+            liveOddsCount = 0
         }
     }
 

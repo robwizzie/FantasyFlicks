@@ -32,31 +32,32 @@ struct OscarCategory: Codable, Identifiable, Hashable, Sendable {
         // Writing
         OscarCategory(id: "best_original_screenplay", name: "Best Original Screenplay", shortName: "Orig. Screenplay", order: 7, icon: "doc.text.fill", isMajor: false),
         OscarCategory(id: "best_adapted_screenplay", name: "Best Adapted Screenplay", shortName: "Adpt. Screenplay", order: 8, icon: "doc.text.fill", isMajor: false),
+        OscarCategory(id: "best_casting", name: "Best Casting", shortName: "Casting", order: 9, icon: "person.3.fill", isMajor: false),
 
         // Animation & International
-        OscarCategory(id: "best_animated_feature", name: "Best Animated Feature", shortName: "Animated", order: 9, icon: "sparkles", isMajor: false),
-        OscarCategory(id: "best_international_feature", name: "Best International Feature", shortName: "International", order: 10, icon: "globe", isMajor: false),
-        OscarCategory(id: "best_documentary_feature", name: "Best Documentary Feature", shortName: "Documentary", order: 11, icon: "doc.richtext.fill", isMajor: false),
+        OscarCategory(id: "best_animated_feature", name: "Best Animated Feature", shortName: "Animated", order: 10, icon: "sparkles", isMajor: false),
+        OscarCategory(id: "best_international_feature", name: "Best International Feature", shortName: "International", order: 11, icon: "globe", isMajor: false),
+        OscarCategory(id: "best_documentary_feature", name: "Best Documentary Feature", shortName: "Documentary", order: 12, icon: "doc.richtext.fill", isMajor: false),
 
         // Technical
-        OscarCategory(id: "best_cinematography", name: "Best Cinematography", shortName: "Cinematography", order: 12, icon: "camera.fill", isMajor: false),
-        OscarCategory(id: "best_film_editing", name: "Best Film Editing", shortName: "Editing", order: 13, icon: "scissors", isMajor: false),
-        OscarCategory(id: "best_production_design", name: "Best Production Design", shortName: "Production", order: 14, icon: "building.2.fill", isMajor: false),
-        OscarCategory(id: "best_costume_design", name: "Best Costume Design", shortName: "Costume", order: 15, icon: "tshirt.fill", isMajor: false),
-        OscarCategory(id: "best_makeup_hairstyling", name: "Best Makeup and Hairstyling", shortName: "Makeup", order: 16, icon: "paintbrush.fill", isMajor: false),
+        OscarCategory(id: "best_cinematography", name: "Best Cinematography", shortName: "Cinematography", order: 13, icon: "camera.fill", isMajor: false),
+        OscarCategory(id: "best_film_editing", name: "Best Film Editing", shortName: "Editing", order: 14, icon: "scissors", isMajor: false),
+        OscarCategory(id: "best_production_design", name: "Best Production Design", shortName: "Production", order: 15, icon: "building.2.fill", isMajor: false),
+        OscarCategory(id: "best_costume_design", name: "Best Costume Design", shortName: "Costume", order: 16, icon: "tshirt.fill", isMajor: false),
+        OscarCategory(id: "best_makeup_hairstyling", name: "Best Makeup and Hairstyling", shortName: "Makeup", order: 17, icon: "paintbrush.fill", isMajor: false),
 
         // Sound & Music
-        OscarCategory(id: "best_sound", name: "Best Sound", shortName: "Sound", order: 17, icon: "speaker.wave.3.fill", isMajor: false),
-        OscarCategory(id: "best_original_score", name: "Best Original Score", shortName: "Score", order: 18, icon: "music.note", isMajor: false),
-        OscarCategory(id: "best_original_song", name: "Best Original Song", shortName: "Song", order: 19, icon: "music.mic", isMajor: false),
+        OscarCategory(id: "best_sound", name: "Best Sound", shortName: "Sound", order: 18, icon: "speaker.wave.3.fill", isMajor: false),
+        OscarCategory(id: "best_original_score", name: "Best Original Score", shortName: "Score", order: 19, icon: "music.note", isMajor: false),
+        OscarCategory(id: "best_original_song", name: "Best Original Song", shortName: "Song", order: 20, icon: "music.mic", isMajor: false),
 
         // Visual Effects
-        OscarCategory(id: "best_visual_effects", name: "Best Visual Effects", shortName: "VFX", order: 20, icon: "wand.and.stars", isMajor: false),
+        OscarCategory(id: "best_visual_effects", name: "Best Visual Effects", shortName: "VFX", order: 21, icon: "wand.and.stars", isMajor: false),
 
         // Shorts
-        OscarCategory(id: "best_animated_short", name: "Best Animated Short Film", shortName: "Anim. Short", order: 21, icon: "play.rectangle.fill", isMajor: false),
-        OscarCategory(id: "best_live_action_short", name: "Best Live Action Short Film", shortName: "Live Short", order: 22, icon: "play.rectangle.fill", isMajor: false),
-        OscarCategory(id: "best_documentary_short", name: "Best Documentary Short Film", shortName: "Doc. Short", order: 23, icon: "play.rectangle.fill", isMajor: false)
+        OscarCategory(id: "best_animated_short", name: "Best Animated Short Film", shortName: "Anim. Short", order: 22, icon: "play.rectangle.fill", isMajor: false),
+        OscarCategory(id: "best_live_action_short", name: "Best Live Action Short Film", shortName: "Live Short", order: 23, icon: "play.rectangle.fill", isMajor: false),
+        OscarCategory(id: "best_documentary_short", name: "Best Documentary Short Film", shortName: "Doc. Short", order: 24, icon: "play.rectangle.fill", isMajor: false)
     ]
 
     /// Major categories only (the "Big 6")
@@ -683,8 +684,249 @@ extension OscarNominee {
             + bestLiveActionShort + bestDocumentaryShort
     }()
 
-    /// Backwards-compatible alias
-    static let sampleNominees = nominees97th
+    // MARK: - 98th Academy Awards Nominees (2026 Ceremony)
+
+    /// Complete nominee data for the 98th Academy Awards (March 15, 2026)
+    /// Films of 2025; includes Best Casting (new category).
+    static let nominees98th: [OscarNominee] = {
+        let year = 2026
+
+        // MARK: Best Picture (movieIds for TMDB poster fetch)
+        let bestPicture: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_picture", name: "Bugonia", movieId: 701387),
+            OscarNominee(year: year, categoryId: "best_picture", name: "F1", movieId: 911430),
+            OscarNominee(year: year, categoryId: "best_picture", name: "Frankenstein", movieId: 1062722),
+            OscarNominee(year: year, categoryId: "best_picture", name: "Hamnet", movieId: 858024),
+            OscarNominee(year: year, categoryId: "best_picture", name: "Marty Supreme", movieId: 1317288),
+            OscarNominee(year: year, categoryId: "best_picture", name: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_picture", name: "The Secret Agent", movieId: 1220564),
+            OscarNominee(year: year, categoryId: "best_picture", name: "Sentimental Value", movieId: 1124566),
+            OscarNominee(year: year, categoryId: "best_picture", name: "Sinners", movieId: 1233413),
+            OscarNominee(year: year, categoryId: "best_picture", name: "Train Dreams", movieId: 1241983),
+        ]
+
+        // MARK: Best Director
+        let bestDirector: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_director", name: "Chloé Zhao", movieTitle: "Hamnet", movieId: 858024),
+            OscarNominee(year: year, categoryId: "best_director", name: "Josh Safdie", movieTitle: "Marty Supreme", movieId: 1317288),
+            OscarNominee(year: year, categoryId: "best_director", name: "Paul Thomas Anderson", movieTitle: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_director", name: "Joachim Trier", movieTitle: "Sentimental Value", movieId: 1124566),
+            OscarNominee(year: year, categoryId: "best_director", name: "Ryan Coogler", movieTitle: "Sinners", movieId: 1233413),
+        ]
+
+        // MARK: Best Actor
+        let bestActor: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_actor", name: "Timothée Chalamet", movieTitle: "Marty Supreme", movieId: 1317288),
+            OscarNominee(year: year, categoryId: "best_actor", name: "Leonardo DiCaprio", movieTitle: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_actor", name: "Ethan Hawke", movieTitle: "Blue Moon", movieId: 1299655),
+            OscarNominee(year: year, categoryId: "best_actor", name: "Michael B. Jordan", movieTitle: "Sinners", movieId: 1233413),
+            OscarNominee(year: year, categoryId: "best_actor", name: "Wagner Moura", movieTitle: "The Secret Agent", movieId: 1220564),
+        ]
+
+        // MARK: Best Actress
+        let bestActress: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_actress", name: "Jessie Buckley", movieTitle: "Hamnet", movieId: 858024),
+            OscarNominee(year: year, categoryId: "best_actress", name: "Rose Byrne", movieTitle: "If I Had Legs I'd Kick You", movieId: 1160360),
+            OscarNominee(year: year, categoryId: "best_actress", name: "Kate Hudson", movieTitle: "Song Sung Blue", movieId: 1371185),
+            OscarNominee(year: year, categoryId: "best_actress", name: "Renate Reinsve", movieTitle: "Sentimental Value", movieId: 1124566),
+            OscarNominee(year: year, categoryId: "best_actress", name: "Emma Stone", movieTitle: "Bugonia", movieId: 701387),
+        ]
+
+        // MARK: Best Supporting Actor
+        let bestSupportingActor: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_supporting_actor", name: "Benicio del Toro", movieTitle: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_supporting_actor", name: "Jacob Elordi", movieTitle: "Frankenstein", movieId: 1062722),
+            OscarNominee(year: year, categoryId: "best_supporting_actor", name: "Delroy Lindo", movieTitle: "Sinners", movieId: 1233413),
+            OscarNominee(year: year, categoryId: "best_supporting_actor", name: "Sean Penn", movieTitle: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_supporting_actor", name: "Stellan Skarsgård", movieTitle: "Sentimental Value", movieId: 1124566),
+        ]
+
+        // MARK: Best Supporting Actress
+        let bestSupportingActress: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_supporting_actress", name: "Elle Fanning", movieTitle: "Sentimental Value", movieId: 1124566),
+            OscarNominee(year: year, categoryId: "best_supporting_actress", name: "Inga Ibsdotter Lilleaas", movieTitle: "Sentimental Value", movieId: 1124566),
+            OscarNominee(year: year, categoryId: "best_supporting_actress", name: "Amy Madigan", movieTitle: "Weapons", movieId: 1078605),
+            OscarNominee(year: year, categoryId: "best_supporting_actress", name: "Wunmi Mosaku", movieTitle: "Sinners", movieId: 1233413),
+            OscarNominee(year: year, categoryId: "best_supporting_actress", name: "Teyana Taylor", movieTitle: "One Battle After Another", movieId: 1054867),
+        ]
+
+        // MARK: Best Original Screenplay
+        let bestOriginalScreenplay: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_original_screenplay", name: "Robert Kaplow", movieTitle: "Blue Moon", movieId: 1299655),
+            OscarNominee(year: year, categoryId: "best_original_screenplay", name: "Jafar Panahi", movieTitle: "It Was Just an Accident", movieId: 1456349),
+            OscarNominee(year: year, categoryId: "best_original_screenplay", name: "Ronald Bronstein & Josh Safdie", movieTitle: "Marty Supreme", movieId: 1317288),
+            OscarNominee(year: year, categoryId: "best_original_screenplay", name: "Eskil Vogt & Joachim Trier", movieTitle: "Sentimental Value", movieId: 1124566),
+            OscarNominee(year: year, categoryId: "best_original_screenplay", name: "Ryan Coogler", movieTitle: "Sinners", movieId: 1233413),
+        ]
+
+        // MARK: Best Adapted Screenplay
+        let bestAdaptedScreenplay: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_adapted_screenplay", name: "Will Tracy", movieTitle: "Bugonia", movieId: 701387),
+            OscarNominee(year: year, categoryId: "best_adapted_screenplay", name: "Guillermo del Toro", movieTitle: "Frankenstein", movieId: 1062722),
+            OscarNominee(year: year, categoryId: "best_adapted_screenplay", name: "Chloé Zhao & Maggie O'Farrell", movieTitle: "Hamnet", movieId: 858024),
+            OscarNominee(year: year, categoryId: "best_adapted_screenplay", name: "Paul Thomas Anderson", movieTitle: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_adapted_screenplay", name: "Clint Bentley & Greg Kwedar", movieTitle: "Train Dreams", movieId: 1241983),
+        ]
+
+        // MARK: Best Casting (98th – new category)
+        let bestCasting: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_casting", name: "Nina Gold", movieTitle: "Hamnet", movieId: 858024),
+            OscarNominee(year: year, categoryId: "best_casting", name: "Jennifer Venditti", movieTitle: "Marty Supreme", movieId: 1317288),
+            OscarNominee(year: year, categoryId: "best_casting", name: "Cassandra Kulukundis", movieTitle: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_casting", name: "Gabriel Domingues", movieTitle: "The Secret Agent", movieId: 1220564),
+            OscarNominee(year: year, categoryId: "best_casting", name: "Francine Maisler", movieTitle: "Sinners", movieId: 1233413),
+        ]
+
+        // MARK: Best Animated Feature
+        let bestAnimatedFeature: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_animated_feature", name: "Arco", movieId: 804370),
+            OscarNominee(year: year, categoryId: "best_animated_feature", name: "Elio", movieId: 1022787),
+            OscarNominee(year: year, categoryId: "best_animated_feature", name: "KPop Demon Hunters", movieId: 803796),
+            OscarNominee(year: year, categoryId: "best_animated_feature", name: "Little Amélie or the Character of Rain"),
+            OscarNominee(year: year, categoryId: "best_animated_feature", name: "Zootopia 2", movieId: 1084242),
+        ]
+
+        // MARK: Best International Feature Film
+        let bestInternationalFeature: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_international_feature", name: "It Was Just an Accident", movieTitle: "France", movieId: 1456349),
+            OscarNominee(year: year, categoryId: "best_international_feature", name: "The Secret Agent", movieTitle: "Brazil", movieId: 1220564),
+            OscarNominee(year: year, categoryId: "best_international_feature", name: "Sentimental Value", movieTitle: "Norway", movieId: 1124566),
+            OscarNominee(year: year, categoryId: "best_international_feature", name: "Sirāt", movieTitle: "Spain"),
+            OscarNominee(year: year, categoryId: "best_international_feature", name: "The Voice of Hind Rajab", movieTitle: "Tunisia"),
+        ]
+
+        // MARK: Best Documentary Feature
+        let bestDocumentaryFeature: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_documentary_feature", name: "The Alabama Solution"),
+            OscarNominee(year: year, categoryId: "best_documentary_feature", name: "Come See Me in the Good Light"),
+            OscarNominee(year: year, categoryId: "best_documentary_feature", name: "Cutting Through Rocks"),
+            OscarNominee(year: year, categoryId: "best_documentary_feature", name: "Mr Nobody Against Putin"),
+            OscarNominee(year: year, categoryId: "best_documentary_feature", name: "The Perfect Neighbor"),
+        ]
+
+        // MARK: Best Cinematography
+        let bestCinematography: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_cinematography", name: "Dan Laustsen", movieTitle: "Frankenstein", movieId: 1062722),
+            OscarNominee(year: year, categoryId: "best_cinematography", name: "Darius Khondji", movieTitle: "Marty Supreme", movieId: 1317288),
+            OscarNominee(year: year, categoryId: "best_cinematography", name: "Michael Bauman", movieTitle: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_cinematography", name: "Autumn Durald Arkapaw", movieTitle: "Sinners", movieId: 1233413),
+            OscarNominee(year: year, categoryId: "best_cinematography", name: "Adolpho Veloso", movieTitle: "Train Dreams", movieId: 1241983),
+        ]
+
+        // MARK: Best Film Editing
+        let bestFilmEditing: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_film_editing", name: "F1", movieId: 911430),
+            OscarNominee(year: year, categoryId: "best_film_editing", name: "Marty Supreme", movieId: 1317288),
+            OscarNominee(year: year, categoryId: "best_film_editing", name: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_film_editing", name: "Sentimental Value", movieId: 1124566),
+            OscarNominee(year: year, categoryId: "best_film_editing", name: "Sinners", movieId: 1233413),
+        ]
+
+        // MARK: Best Production Design
+        let bestProductionDesign: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_production_design", name: "Frankenstein", movieId: 1062722),
+            OscarNominee(year: year, categoryId: "best_production_design", name: "Hamnet", movieId: 858024),
+            OscarNominee(year: year, categoryId: "best_production_design", name: "Marty Supreme", movieId: 1317288),
+            OscarNominee(year: year, categoryId: "best_production_design", name: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_production_design", name: "Sinners", movieId: 1233413),
+        ]
+
+        // MARK: Best Costume Design
+        let bestCostumeDesign: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_costume_design", name: "Avatar: Fire and Ash", movieId: 83533),
+            OscarNominee(year: year, categoryId: "best_costume_design", name: "Frankenstein", movieId: 1062722),
+            OscarNominee(year: year, categoryId: "best_costume_design", name: "Hamnet", movieId: 858024),
+            OscarNominee(year: year, categoryId: "best_costume_design", name: "Marty Supreme", movieId: 1317288),
+            OscarNominee(year: year, categoryId: "best_costume_design", name: "Sinners", movieId: 1233413),
+        ]
+
+        // MARK: Best Makeup and Hairstyling
+        let bestMakeupHairstyling: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_makeup_hairstyling", name: "Frankenstein", movieId: 1062722),
+            OscarNominee(year: year, categoryId: "best_makeup_hairstyling", name: "Kokuho"),
+            OscarNominee(year: year, categoryId: "best_makeup_hairstyling", name: "Sinners", movieId: 1233413),
+            OscarNominee(year: year, categoryId: "best_makeup_hairstyling", name: "The Smashing Machine", movieId: 760329),
+            OscarNominee(year: year, categoryId: "best_makeup_hairstyling", name: "The Ugly Stepsister"),
+        ]
+
+        // MARK: Best Sound
+        let bestSound: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_sound", name: "F1", movieId: 911430),
+            OscarNominee(year: year, categoryId: "best_sound", name: "Frankenstein", movieId: 1062722),
+            OscarNominee(year: year, categoryId: "best_sound", name: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_sound", name: "Sinners", movieId: 1233413),
+            OscarNominee(year: year, categoryId: "best_sound", name: "Sirāt"),
+        ]
+
+        // MARK: Best Original Score
+        let bestOriginalScore: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_original_score", name: "Jerskin Fendrix", movieTitle: "Bugonia", movieId: 701387),
+            OscarNominee(year: year, categoryId: "best_original_score", name: "Alexandre Desplat", movieTitle: "Frankenstein", movieId: 1062722),
+            OscarNominee(year: year, categoryId: "best_original_score", name: "Max Richter", movieTitle: "Hamnet", movieId: 858024),
+            OscarNominee(year: year, categoryId: "best_original_score", name: "Jonny Greenwood", movieTitle: "One Battle After Another", movieId: 1054867),
+            OscarNominee(year: year, categoryId: "best_original_score", name: "Ludwig Göransson", movieTitle: "Sinners", movieId: 1233413),
+        ]
+
+        // MARK: Best Original Song
+        let bestOriginalSong: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_original_song", name: "\"Dear Me\"", movieTitle: "Diane Warren: Relentless", details: "Music & Lyrics by Diane Warren"),
+            OscarNominee(year: year, categoryId: "best_original_song", name: "\"Golden\"", movieTitle: "KPop Demon Hunters", movieId: 803796, details: "Music & Lyrics by Ejae, Mark Sonnenblick, Ido, Teddy Park"),
+            OscarNominee(year: year, categoryId: "best_original_song", name: "\"I Lied to You\"", movieTitle: "Sinners", movieId: 1233413, details: "Music & Lyrics by Raphael Saadiq, Ludwig Göransson"),
+            OscarNominee(year: year, categoryId: "best_original_song", name: "\"Sweet Dreams of Joy\"", movieTitle: "Viva Verdi!", details: "Music & Lyrics by Nicholas Pike"),
+            OscarNominee(year: year, categoryId: "best_original_song", name: "\"Train Dreams\"", movieTitle: "Train Dreams", movieId: 1241983, details: "Music by Nick Cave, Bryce Dessner; Lyrics by Nick Cave"),
+        ]
+
+        // MARK: Best Visual Effects
+        let bestVisualEffects: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_visual_effects", name: "Avatar: Fire and Ash", movieId: 83533),
+            OscarNominee(year: year, categoryId: "best_visual_effects", name: "F1", movieId: 911430),
+            OscarNominee(year: year, categoryId: "best_visual_effects", name: "Jurassic World Rebirth", movieId: 1234821),
+            OscarNominee(year: year, categoryId: "best_visual_effects", name: "The Lost Bus", movieId: 1236470),
+            OscarNominee(year: year, categoryId: "best_visual_effects", name: "Sinners", movieId: 1233413),
+        ]
+
+        // MARK: Best Animated Short Film
+        let bestAnimatedShort: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_animated_short", name: "Butterfly"),
+            OscarNominee(year: year, categoryId: "best_animated_short", name: "Forevergreen"),
+            OscarNominee(year: year, categoryId: "best_animated_short", name: "The Girl Who Cried Pearls"),
+            OscarNominee(year: year, categoryId: "best_animated_short", name: "Retirement Plan"),
+            OscarNominee(year: year, categoryId: "best_animated_short", name: "The Three Sisters"),
+        ]
+
+        // MARK: Best Live Action Short Film
+        let bestLiveActionShort: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_live_action_short", name: "Butcher's Stain"),
+            OscarNominee(year: year, categoryId: "best_live_action_short", name: "A Friend of Dorothy"),
+            OscarNominee(year: year, categoryId: "best_live_action_short", name: "Jane Austen's Period Drama"),
+            OscarNominee(year: year, categoryId: "best_live_action_short", name: "The Singers"),
+            OscarNominee(year: year, categoryId: "best_live_action_short", name: "Two People Exchanging Saliva"),
+        ]
+
+        // MARK: Best Documentary Short Film
+        let bestDocumentaryShort: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_documentary_short", name: "All the Empty Rooms"),
+            OscarNominee(year: year, categoryId: "best_documentary_short", name: "Armed Only with a Camera: The Life and Death of Brent Renaud"),
+            OscarNominee(year: year, categoryId: "best_documentary_short", name: "Children No More: \"Were and Are Gone\""),
+            OscarNominee(year: year, categoryId: "best_documentary_short", name: "The Devil Is Busy"),
+            OscarNominee(year: year, categoryId: "best_documentary_short", name: "Perfectly a Strangeness"),
+        ]
+
+        return bestPicture + bestDirector + bestActor + bestActress
+            + bestSupportingActor + bestSupportingActress
+            + bestOriginalScreenplay + bestAdaptedScreenplay
+            + bestCasting
+            + bestAnimatedFeature + bestInternationalFeature
+            + bestDocumentaryFeature + bestCinematography
+            + bestFilmEditing + bestProductionDesign
+            + bestCostumeDesign + bestMakeupHairstyling
+            + bestSound + bestOriginalScore + bestOriginalSong
+            + bestVisualEffects + bestAnimatedShort
+            + bestLiveActionShort + bestDocumentaryShort
+    }()
+
+    /// Current ceremony nominees (98th Academy Awards – March 2026). Use for Kalshi and app default.
+    static let sampleNominees = nominees98th
 }
 
 // MARK: - Expert Consensus Odds (Pre-Ceremony)
@@ -692,110 +934,117 @@ extension OscarNominee {
 extension OscarNominee {
 
     /// Win probabilities - overwritten at runtime with live Kalshi prediction market data.
-    /// The static values below are fallback estimates used when Kalshi is unavailable.
+    /// Fallback estimates for 98th Academy Awards (March 2026) when Kalshi is unavailable.
     static var expertOdds: [String: Double] = [
-        // Best Picture
-        "Anora_best_picture": 0.32,
-        "The Brutalist_best_picture": 0.22,
-        "Conclave_best_picture": 0.15,
-        "Emilia Pérez_best_picture": 0.10,
-        "The Substance_best_picture": 0.06,
-        "Wicked_best_picture": 0.05,
-        "Dune: Part Two_best_picture": 0.04,
-        "A Complete Unknown_best_picture": 0.03,
-        "I'm Still Here_best_picture": 0.02,
-        "Nickel Boys_best_picture": 0.01,
+        // Best Picture (98th – Sinners leads with 16 noms)
+        "Sinners_best_picture": 0.28,
+        "One Battle After Another_best_picture": 0.22,
+        "Bugonia_best_picture": 0.18,
+        "Sentimental Value_best_picture": 0.12,
+        "Marty Supreme_best_picture": 0.08,
+        "Hamnet_best_picture": 0.05,
+        "Frankenstein_best_picture": 0.04,
+        "F1_best_picture": 0.02,
+        "The Secret Agent_best_picture": 0.01,
+        "Train Dreams_best_picture": 0.01,
 
         // Best Director
-        "Brady Corbet_best_director": 0.35,
-        "Sean Baker_best_director": 0.30,
-        "Jacques Audiard_best_director": 0.15,
-        "Coralie Fargeat_best_director": 0.12,
-        "James Mangold_best_director": 0.08,
+        "Ryan Coogler_best_director": 0.35,
+        "Paul Thomas Anderson_best_director": 0.25,
+        "Chloé Zhao_best_director": 0.20,
+        "Joachim Trier_best_director": 0.12,
+        "Josh Safdie_best_director": 0.08,
 
         // Best Actor
-        "Adrien Brody_best_actor": 0.50,
-        "Timothée Chalamet_best_actor": 0.25,
-        "Ralph Fiennes_best_actor": 0.12,
-        "Sebastian Stan_best_actor": 0.08,
-        "Colman Domingo_best_actor": 0.05,
+        "Timothée Chalamet_best_actor": 0.32,
+        "Michael B. Jordan_best_actor": 0.28,
+        "Leonardo DiCaprio_best_actor": 0.20,
+        "Wagner Moura_best_actor": 0.12,
+        "Ethan Hawke_best_actor": 0.08,
 
         // Best Actress
-        "Demi Moore_best_actress": 0.40,
-        "Mikey Madison_best_actress": 0.22,
-        "Fernanda Torres_best_actress": 0.18,
-        "Cynthia Erivo_best_actress": 0.12,
-        "Karla Sofía Gascón_best_actress": 0.08,
+        "Emma Stone_best_actress": 0.35,
+        "Jessie Buckley_best_actress": 0.25,
+        "Renate Reinsve_best_actress": 0.20,
+        "Kate Hudson_best_actress": 0.12,
+        "Rose Byrne_best_actress": 0.08,
 
         // Best Supporting Actor
-        "Kieran Culkin_best_supporting_actor": 0.45,
-        "Yura Borisov_best_supporting_actor": 0.20,
-        "Jeremy Strong_best_supporting_actor": 0.15,
-        "Edward Norton_best_supporting_actor": 0.12,
-        "Guy Pearce_best_supporting_actor": 0.08,
+        "Jacob Elordi_best_supporting_actor": 0.30,
+        "Benicio del Toro_best_supporting_actor": 0.25,
+        "Delroy Lindo_best_supporting_actor": 0.22,
+        "Stellan Skarsgård_best_supporting_actor": 0.13,
+        "Sean Penn_best_supporting_actor": 0.10,
 
         // Best Supporting Actress
-        "Zoe Saldaña_best_supporting_actress": 0.45,
-        "Ariana Grande_best_supporting_actress": 0.20,
-        "Isabella Rossellini_best_supporting_actress": 0.15,
-        "Monica Barbaro_best_supporting_actress": 0.12,
-        "Felicity Jones_best_supporting_actress": 0.08,
+        "Wunmi Mosaku_best_supporting_actress": 0.28,
+        "Elle Fanning_best_supporting_actress": 0.24,
+        "Teyana Taylor_best_supporting_actress": 0.20,
+        "Amy Madigan_best_supporting_actress": 0.15,
+        "Inga Ibsdotter Lilleaas_best_supporting_actress": 0.13,
 
         // Best Original Screenplay
-        "Sean Baker_best_original_screenplay": 0.35,
-        "Jesse Eisenberg_best_original_screenplay": 0.25,
-        "Brady Corbet & Mona Fastvold_best_original_screenplay": 0.20,
-        "Coralie Fargeat_best_original_screenplay": 0.12,
-        "Moritz Binder & Tim Fehlbaum_best_original_screenplay": 0.08,
+        "Ryan Coogler_best_original_screenplay": 0.35,
+        "Eskil Vogt & Joachim Trier_best_original_screenplay": 0.25,
+        "Ronald Bronstein & Josh Safdie_best_original_screenplay": 0.20,
+        "Robert Kaplow_best_original_screenplay": 0.12,
+        "Jafar Panahi_best_original_screenplay": 0.08,
 
         // Best Adapted Screenplay
-        "Peter Straughan_best_adapted_screenplay": 0.35,
-        "Jacques Audiard_best_adapted_screenplay": 0.25,
-        "RaMell Ross & Joslyn Barnes_best_adapted_screenplay": 0.18,
-        "James Mangold & Jay Cocks_best_adapted_screenplay": 0.12,
+        "Paul Thomas Anderson_best_adapted_screenplay": 0.30,
+        "Chloé Zhao & Maggie O'Farrell_best_adapted_screenplay": 0.25,
+        "Guillermo del Toro_best_adapted_screenplay": 0.20,
+        "Will Tracy_best_adapted_screenplay": 0.15,
         "Clint Bentley & Greg Kwedar_best_adapted_screenplay": 0.10,
 
+        // Best Casting
+        "Francine Maisler_best_casting": 0.30,
+        "Nina Gold_best_casting": 0.25,
+        "Cassandra Kulukundis_best_casting": 0.22,
+        "Jennifer Venditti_best_casting": 0.13,
+        "Gabriel Domingues_best_casting": 0.10,
+
         // Best Animated Feature
-        "The Wild Robot_best_animated_feature": 0.40,
-        "Flow_best_animated_feature": 0.25,
-        "Inside Out 2_best_animated_feature": 0.18,
-        "Wallace & Gromit: Vengeance Most Fowl_best_animated_feature": 0.10,
-        "Memoir of a Snail_best_animated_feature": 0.07,
+        "Zootopia 2_best_animated_feature": 0.35,
+        "Elio_best_animated_feature": 0.25,
+        "KPop Demon Hunters_best_animated_feature": 0.20,
+        "Arco_best_animated_feature": 0.12,
+        "Little Amélie or the Character of Rain_best_animated_feature": 0.08,
 
         // Best International Feature Film
-        "I'm Still Here_best_international_feature": 0.35,
-        "Emilia Pérez_best_international_feature": 0.25,
-        "The Seed of the Sacred Fig_best_international_feature": 0.20,
-        "Flow_best_international_feature": 0.12,
-        "The Girl with the Needle_best_international_feature": 0.08,
+        "Sentimental Value_best_international_feature": 0.30,
+        "The Secret Agent_best_international_feature": 0.25,
+        "It Was Just an Accident_best_international_feature": 0.22,
+        "Sirāt_best_international_feature": 0.13,
+        "The Voice of Hind Rajab_best_international_feature": 0.10,
 
         // Best Cinematography
-        "Lol Crawley_best_cinematography": 0.35,
-        "Greig Fraser_best_cinematography": 0.25,
-        "Jarin Blaschke_best_cinematography": 0.20,
-        "Ed Lachman_best_cinematography": 0.12,
-        "Paul Guilhaume_best_cinematography": 0.08,
+        "Autumn Durald Arkapaw_best_cinematography": 0.30,
+        "Darius Khondji_best_cinematography": 0.25,
+        "Dan Laustsen_best_cinematography": 0.22,
+        "Michael Bauman_best_cinematography": 0.13,
+        "Adolpho Veloso_best_cinematography": 0.10,
 
         // Best Visual Effects
-        "Dune: Part Two_best_visual_effects": 0.40,
-        "Wicked_best_visual_effects": 0.25,
-        "Better Man_best_visual_effects": 0.15,
-        "Alien: Romulus_best_visual_effects": 0.12,
-        "Kingdom of the Planet of the Apes_best_visual_effects": 0.08,
+        "Sinners_best_visual_effects": 0.35,
+        "F1_best_visual_effects": 0.25,
+        "Avatar: Fire and Ash_best_visual_effects": 0.20,
+        "Jurassic World Rebirth_best_visual_effects": 0.12,
+        "The Lost Bus_best_visual_effects": 0.08,
 
         // Best Original Score
-        "Daniel Blumberg_best_original_score": 0.35,
-        "Kris Bowers_best_original_score": 0.25,
-        "Volker Bertelmann_best_original_score": 0.18,
-        "Clément Ducol & Camille_best_original_score": 0.12,
-        "John Powell & Stephen Schwartz_best_original_score": 0.10,
+        "Ludwig Göransson_best_original_score": 0.35,
+        "Jonny Greenwood_best_original_score": 0.25,
+        "Max Richter_best_original_score": 0.20,
+        "Alexandre Desplat_best_original_score": 0.12,
+        "Jerskin Fendrix_best_original_score": 0.08,
 
         // Best Original Song
-        "\"El Mal\"_best_original_song": 0.30,
-        "\"Never Too Late\"_best_original_song": 0.25,
-        "\"Like a Bird\"_best_original_song": 0.20,
-        "\"The Journey\"_best_original_song": 0.15,
-        "\"Mi Camino\"_best_original_song": 0.10,
+        "\"I Lied to You\"_best_original_song": 0.32,
+        "\"Golden\"_best_original_song": 0.25,
+        "\"Train Dreams\"_best_original_song": 0.20,
+        "\"Dear Me\"_best_original_song": 0.13,
+        "\"Sweet Dreams of Joy\"_best_original_song": 0.10,
     ]
 
     /// Get the expert consensus odds for this nominee
@@ -812,7 +1061,7 @@ extension OscarNominee {
     /// Whether this nominee is the frontrunner in their category
     var isFrontrunner: Bool {
         guard let myOdds = odds else { return false }
-        let categoryNominees = OscarNominee.nominees97th.filter { $0.categoryId == categoryId }
+        let categoryNominees = OscarNominee.nominees98th.filter { $0.categoryId == categoryId }
         let maxOdds = categoryNominees.compactMap { $0.odds }.max() ?? 0
         return myOdds == maxOdds
     }

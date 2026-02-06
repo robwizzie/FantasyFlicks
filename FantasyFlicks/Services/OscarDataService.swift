@@ -43,7 +43,7 @@ final class OscarDataService: ObservableObject {
 
     /// Load nominees from bundled data (primary) and optionally sync with Firestore
     func loadBundledNominees() {
-        nominees = OscarNominee.nominees97th
+        nominees = OscarNominee.nominees98th
     }
 
     /// Sync nominees from Firestore (for real-time winner updates during ceremony)
