@@ -14,7 +14,7 @@ struct OscarDraftView: View {
     let leagueName: String
 
     @StateObject private var viewModel = OscarDraftViewModel()
-    @State private var selectedTab: OscarDraftTab = .board
+    @State private var selectedTab: OscarDraftTab = .categories
     @State private var showConfirmPick = false
     @State private var selectedNominee: OscarNominee?
     @State private var selectedCategory: OscarCategory?
@@ -22,11 +22,11 @@ struct OscarDraftView: View {
     @Environment(\.dismiss) private var dismiss
 
     enum OscarDraftTab: String, CaseIterable {
-        case board = "Board"
-        case players = "Players"
-        case myTeam = "My Team"
+        case categories = "Categories"
+        case all = "All Nominees"
+        case myPicks = "My Picks"
         case standings = "Standings"
-        case tracker = "Tracker"
+        case history = "History"
     }
 
     var body: some View {
@@ -51,19 +51,19 @@ struct OscarDraftView: View {
 
                     TabView(selection: $selectedTab) {
                         categoriesView
-                            .tag(OscarDraftTab.board)
+                            .tag(OscarDraftTab.categories)
 
-                        playersView
-                            .tag(OscarDraftTab.players)
+                        allNomineesView
+                            .tag(OscarDraftTab.all)
 
                         myPicksView
-                            .tag(OscarDraftTab.myTeam)
+                            .tag(OscarDraftTab.myPicks)
 
                         standingsView
                             .tag(OscarDraftTab.standings)
 
                         historyView
-                            .tag(OscarDraftTab.tracker)
+                            .tag(OscarDraftTab.history)
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
                 }
@@ -406,12 +406,21 @@ struct OscarDraftView: View {
         }
     }
 
-    // MARK: - Players View (View All)
+    // MARK: - All Nominees View (View All)
 
-    private var playersView: some View {
+    private var allNomineesView: some View {
         VStack(spacing: 0) {
-            // Sort options
-            ScrollView(.horizontal, showsIndicators: false) {
+            // Sort by label + options
+            VStack(spacing: FFSpacing.sm) {
+                HStack {
+                    Text("Sort by")
+                        .font(FFTypography.labelSmall)
+                        .foregroundColor(FFColors.textTertiary)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.top, FFSpacing.sm)
+
                 HStack(spacing: FFSpacing.sm) {
                     ForEach(OscarDraftViewModel.NomineeSortOption.allCases, id: \.self) { option in
                         Button {
@@ -419,15 +428,15 @@ struct OscarDraftView: View {
                                 viewModel.sortOption = option
                             }
                         } label: {
-                            HStack(spacing: 4) {
+                            HStack(spacing: 6) {
                                 Image(systemName: sortIcon(for: option))
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 12))
                                 Text(option.rawValue)
-                                    .font(FFTypography.labelSmall)
+                                    .font(.system(size: 13, weight: .semibold))
                             }
                             .foregroundColor(viewModel.sortOption == option ? FFColors.backgroundDark : FFColors.textSecondary)
-                            .padding(.horizontal, FFSpacing.md)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
                             .background {
                                 if viewModel.sortOption == option {
                                     Capsule().fill(FFColors.goldGradientHorizontal)
@@ -437,54 +446,73 @@ struct OscarDraftView: View {
                             }
                         }
                     }
+                    Spacer()
                 }
                 .padding(.horizontal)
-                .padding(.vertical, FFSpacing.xs)
             }
 
             // Category filter chips
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: FFSpacing.xs) {
-                    // "All" chip
-                    Button {
-                        viewModel.playerCategoryFilter = nil
-                    } label: {
-                        Text("All")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(viewModel.playerCategoryFilter == nil ? FFColors.backgroundDark : FFColors.textSecondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background {
-                                if viewModel.playerCategoryFilter == nil {
-                                    Capsule().fill(FFColors.goldPrimary)
-                                } else {
-                                    Capsule().fill(FFColors.backgroundElevated)
-                                }
-                            }
-                    }
-
-                    ForEach(OscarCategory.allCategories) { cat in
+            VStack(spacing: FFSpacing.xs) {
+                HStack {
+                    Text("Filter by category")
+                        .font(FFTypography.labelSmall)
+                        .foregroundColor(FFColors.textTertiary)
+                    Spacer()
+                    if viewModel.playerCategoryFilter != nil {
                         Button {
-                            viewModel.playerCategoryFilter = cat.id
+                            viewModel.playerCategoryFilter = nil
                         } label: {
-                            Text(cat.shortName)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(viewModel.playerCategoryFilter == cat.id ? FFColors.backgroundDark : FFColors.textSecondary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
+                            Text("Clear")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(FFColors.goldPrimary)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, FFSpacing.sm)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: FFSpacing.sm) {
+                        Button {
+                            viewModel.playerCategoryFilter = nil
+                        } label: {
+                            Text("All")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(viewModel.playerCategoryFilter == nil ? FFColors.backgroundDark : FFColors.textSecondary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
                                 .background {
-                                    if viewModel.playerCategoryFilter == cat.id {
+                                    if viewModel.playerCategoryFilter == nil {
                                         Capsule().fill(FFColors.goldPrimary)
                                     } else {
                                         Capsule().fill(FFColors.backgroundElevated)
                                     }
                                 }
                         }
+
+                        ForEach(OscarCategory.allCategories) { cat in
+                            Button {
+                                viewModel.playerCategoryFilter = cat.id
+                            } label: {
+                                Text(cat.shortName)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(viewModel.playerCategoryFilter == cat.id ? FFColors.backgroundDark : FFColors.textSecondary)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background {
+                                        if viewModel.playerCategoryFilter == cat.id {
+                                            Capsule().fill(FFColors.goldPrimary)
+                                        } else {
+                                            Capsule().fill(FFColors.backgroundElevated)
+                                        }
+                                    }
+                            }
+                        }
                     }
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
-                .padding(.bottom, FFSpacing.xs)
             }
+            .padding(.bottom, FFSpacing.sm)
 
             // Column headers
             HStack(spacing: FFSpacing.sm) {
@@ -497,11 +525,11 @@ struct OscarDraftView: View {
                 Text("RSTD")
                     .frame(width: 40)
             }
-            .font(.system(size: 9, weight: .bold))
+            .font(.system(size: 10, weight: .bold))
             .foregroundColor(FFColors.textTertiary)
             .padding(.horizontal)
-            .padding(.vertical, 6)
-            .background(FFColors.backgroundDark)
+            .padding(.vertical, 8)
+            .background(FFColors.backgroundElevated)
 
             // Nominee list
             ScrollView {
@@ -531,8 +559,18 @@ struct OscarDraftView: View {
                         Divider()
                             .background(Color.white.opacity(0.04))
                     }
+
+                    // Odds attribution
+                    HStack(spacing: 4) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 11))
+                        Text("Odds are approximate expert consensus estimates and may not reflect real-time markets.")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(FFColors.textTertiary)
+                    .padding()
+                    .padding(.bottom, 40)
                 }
-                .padding(.bottom, 60)
             }
         }
     }
@@ -1432,7 +1470,7 @@ struct OscarConfirmPickSheet: View {
                                 Text(odds)
                                     .font(FFTypography.titleMedium)
                                     .foregroundColor(FFColors.goldPrimary)
-                                Text("Win Odds")
+                                Text("Est. Odds")
                                     .font(FFTypography.caption)
                                     .foregroundColor(FFColors.textTertiary)
                             }
