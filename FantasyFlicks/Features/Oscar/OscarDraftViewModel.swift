@@ -206,40 +206,77 @@ final class OscarDraftViewModel: ObservableObject {
         await loadNominees(year: Calendar.current.component(.year, from: Date()))
     }
 
+    // MARK: - Search & Filter
+
+    @Published var searchQuery: String = ""
+    @Published var categoryFilter: String? = nil // nil = show all
+    @Published var showFrontrunnerOnly: Bool = false
+
+    /// Filtered nominees based on search, category filter, and frontrunner toggle
+    var filteredNominees: [OscarNominee] {
+        var result = nominees
+
+        // Category filter
+        if let catFilter = categoryFilter {
+            result = result.filter { $0.categoryId == catFilter }
+        }
+
+        // Search
+        if !searchQuery.isEmpty {
+            let q = searchQuery.lowercased()
+            result = result.filter {
+                $0.name.lowercased().contains(q) ||
+                ($0.movieTitle?.lowercased().contains(q) ?? false) ||
+                ($0.details?.lowercased().contains(q) ?? false)
+            }
+        }
+
+        // Frontrunner filter
+        if showFrontrunnerOnly {
+            result = result.filter { $0.isFrontrunner }
+        }
+
+        return result
+    }
+
+    /// Get filtered nominees for a specific category
+    func filteredNominees(for categoryId: String) -> [OscarNominee] {
+        var result = nominees(for: categoryId)
+
+        if !searchQuery.isEmpty {
+            let q = searchQuery.lowercased()
+            result = result.filter {
+                $0.name.lowercased().contains(q) ||
+                ($0.movieTitle?.lowercased().contains(q) ?? false)
+            }
+        }
+
+        return result
+    }
+
+    // MARK: - Roster Percentage
+
+    /// How many teams in this draft have picked a specific nominee
+    func rosterPercentage(for nomineeId: String, categoryId: String) -> Double {
+        let totalTeams = draftOrder.count
+        guard totalTeams > 0 else { return 0 }
+        let pickedCount = allPicks.filter { $0.nomineeId == nomineeId && $0.categoryId == categoryId }.count
+        return Double(pickedCount) / Double(totalTeams)
+    }
+
+    func rosterPercentageString(for nomineeId: String, categoryId: String) -> String {
+        let pct = rosterPercentage(for: nomineeId, categoryId: categoryId)
+        return "\(Int(pct * 100))%"
+    }
+
     // MARK: - Load Nominees
 
     func loadNominees(year: Int) async {
-        // First check Firestore for nominees
-        do {
-            let snapshot = try await db.collection("oscarNominees")
-                .whereField("year", isEqualTo: year)
-                .getDocuments()
+        // Use bundled 97th Academy Award nominees as primary data source
+        nominees = OscarNominee.nominees97th
 
-            if !snapshot.documents.isEmpty {
-                nominees = snapshot.documents.compactMap { doc -> OscarNominee? in
-                    let data = doc.data()
-                    return OscarNominee(
-                        id: doc.documentID,
-                        year: data["year"] as? Int ?? year,
-                        categoryId: data["categoryId"] as? String ?? "",
-                        name: data["name"] as? String ?? "",
-                        movieTitle: data["movieTitle"] as? String,
-                        movieId: data["movieId"] as? Int,
-                        posterPath: data["posterPath"] as? String,
-                        details: data["details"] as? String,
-                        isWinner: data["isWinner"] as? Bool ?? false,
-                        winnerAnnouncedAt: (data["winnerAnnouncedAt"] as? Timestamp)?.dateValue()
-                    )
-                }
-            } else {
-                // Use sample nominees if none in Firestore
-                nominees = OscarNominee.sampleNominees
-            }
-        } catch {
-            // Fall back to sample data
-            nominees = OscarNominee.sampleNominees
-            self.error = "Using sample nominees: \(error.localizedDescription)"
-        }
+        // Also sync from Firestore for real-time winner updates during ceremony
+        OscarDataService.shared.syncFromFirestore(year: year)
     }
 
     // MARK: - Submit Pick

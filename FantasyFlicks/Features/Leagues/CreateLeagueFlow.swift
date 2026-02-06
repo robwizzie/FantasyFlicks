@@ -66,13 +66,23 @@ struct CreateLeagueFlow: View {
 
     private func nextStep() {
         withAnimation {
-            currentStep = currentStep.next
+            var next = currentStep.next
+            // Skip trading settings step for Oscar mode
+            if settings.leagueMode == .oscar && next == .tradingSettings {
+                next = .review
+            }
+            currentStep = next
         }
     }
 
     private func previousStep() {
         withAnimation {
-            currentStep = currentStep.previous
+            var prev = currentStep.previous
+            // Skip trading settings step for Oscar mode
+            if settings.leagueMode == .oscar && prev == .tradingSettings {
+                prev = .scoringSettings
+            }
+            currentStep = prev
         }
     }
 }
@@ -225,21 +235,24 @@ struct ModeSelectionStep: View {
 
                 VStack(spacing: FFSpacing.md) {
                     ModeCard(
+                        mode: .oscar,
+                        isSelected: settings.leagueMode == .oscar,
+                        isComingSoon: false,
+                        onSelect: { settings.leagueMode = .oscar }
+                    )
+
+                    ModeCard(
                         mode: .boxOffice,
                         isSelected: settings.leagueMode == .boxOffice,
-                        onSelect: { settings.leagueMode = .boxOffice }
+                        isComingSoon: true,
+                        onSelect: {}
                     )
 
                     ModeCard(
                         mode: .rottenTomatoes,
                         isSelected: settings.leagueMode == .rottenTomatoes,
-                        onSelect: { settings.leagueMode = .rottenTomatoes }
-                    )
-
-                    ModeCard(
-                        mode: .oscar,
-                        isSelected: settings.leagueMode == .oscar,
-                        onSelect: { settings.leagueMode = .oscar }
+                        isComingSoon: true,
+                        onSelect: {}
                     )
                 }
                 .padding(.horizontal)
@@ -251,6 +264,10 @@ struct ModeSelectionStep: View {
                     .padding(.bottom, FFSpacing.xl)
             }
         }
+        .onAppear {
+            // Default to Oscar mode
+            settings.leagueMode = .oscar
+        }
     }
 }
 
@@ -259,6 +276,7 @@ struct ModeSelectionStep: View {
 struct ModeCard: View {
     let mode: LeagueMode
     let isSelected: Bool
+    var isComingSoon: Bool = false
     let onSelect: () -> Void
 
     var body: some View {
@@ -272,14 +290,26 @@ struct ModeCard: View {
 
                     Image(systemName: mode.icon)
                         .font(.system(size: 24))
-                        .foregroundStyle(isSelected ? FFColors.goldGradient : LinearGradient(colors: [FFColors.textSecondary], startPoint: .top, endPoint: .bottom))
+                        .foregroundStyle(isComingSoon ? LinearGradient(colors: [FFColors.textTertiary], startPoint: .top, endPoint: .bottom) : (isSelected ? FFColors.goldGradient : LinearGradient(colors: [FFColors.textSecondary], startPoint: .top, endPoint: .bottom)))
                 }
 
                 // Text
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(mode.displayName)
-                        .font(FFTypography.headlineSmall)
-                        .foregroundColor(isSelected ? FFColors.textPrimary : FFColors.textSecondary)
+                    HStack(spacing: FFSpacing.sm) {
+                        Text(mode.displayName)
+                            .font(FFTypography.headlineSmall)
+                            .foregroundColor(isComingSoon ? FFColors.textTertiary : (isSelected ? FFColors.textPrimary : FFColors.textSecondary))
+
+                        if isComingSoon {
+                            Text("COMING SOON")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(FFColors.backgroundDark)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(FFColors.textTertiary)
+                                .clipShape(Capsule())
+                        }
+                    }
 
                     Text(mode.description)
                         .font(FFTypography.bodySmall)
@@ -290,7 +320,7 @@ struct ModeCard: View {
                 Spacer()
 
                 // Checkmark
-                if isSelected {
+                if isSelected && !isComingSoon {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 24))
                         .foregroundColor(FFColors.goldPrimary)
@@ -302,11 +332,13 @@ struct ModeCard: View {
                     .fill(FFColors.backgroundElevated)
                     .overlay {
                         RoundedRectangle(cornerRadius: FFCornerRadius.large)
-                            .stroke(isSelected ? FFColors.goldPrimary : Color.white.opacity(0.05), lineWidth: isSelected ? 2 : 1)
+                            .stroke(isSelected && !isComingSoon ? FFColors.goldPrimary : Color.white.opacity(0.05), lineWidth: isSelected && !isComingSoon ? 2 : 1)
                     }
             }
+            .opacity(isComingSoon ? 0.6 : 1.0)
         }
         .buttonStyle(.plain)
+        .disabled(isComingSoon)
     }
 }
 
@@ -447,17 +479,25 @@ struct DraftSettingsStep: View {
                     }
                 }
 
-                // Movies per Player
-                SettingSection(title: "Movies Per Player") {
-                    HStack {
-                        Text("\(settings.moviesPerPlayer)")
-                            .font(FFTypography.displaySmall)
-                            .foregroundStyle(FFColors.goldGradient)
+                // Movies/Picks per Player
+                SettingSection(title: settings.leagueMode == .oscar ? "Picks Per Player" : "Movies Per Player") {
+                    VStack(spacing: FFSpacing.sm) {
+                        HStack {
+                            Text("\(settings.moviesPerPlayer)")
+                                .font(FFTypography.displaySmall)
+                                .foregroundStyle(FFColors.goldGradient)
 
-                        Spacer()
+                            Spacer()
 
-                        Stepper("", value: $settings.moviesPerPlayer, in: 3...10)
-                            .labelsHidden()
+                            Stepper("", value: $settings.moviesPerPlayer, in: settings.leagueMode == .oscar ? 5...23 : 3...10)
+                                .labelsHidden()
+                        }
+
+                        if settings.leagueMode == .oscar {
+                            Text("Each pick is a prediction for a different Oscar category (\(OscarCategory.allCategories.count) categories available)")
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textTertiary)
+                        }
                     }
                     .padding()
                     .background(FFColors.backgroundElevated)
@@ -637,6 +677,27 @@ struct ScoringSettingsStep: View {
 
     private var oscarScoringSettings: some View {
         VStack(spacing: FFSpacing.xl) {
+            // 97th Academy Awards info banner
+            HStack(spacing: FFSpacing.md) {
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(FFColors.goldGradient)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("97th Academy Awards")
+                        .font(FFTypography.headlineSmall)
+                        .foregroundColor(FFColors.textPrimary)
+                    Text("23 categories, 115 nominees")
+                        .font(FFTypography.caption)
+                        .foregroundColor(FFColors.textSecondary)
+                }
+
+                Spacer()
+            }
+            .padding()
+            .background(FFColors.goldPrimary.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.large))
+
             SettingSection(title: "Draft Style") {
                 ForEach(OscarDraftStyle.allCases, id: \.self) { style in
                     SettingOptionRow(
@@ -675,6 +736,7 @@ struct ScoringSettingsStep: View {
                 DatePicker("", selection: $settings.ceremonyDate, displayedComponents: .date)
                     .datePickerStyle(.graphical)
                     .tint(FFColors.goldPrimary)
+                    .colorScheme(.dark)
                     .padding()
                     .background(FFColors.backgroundElevated)
                     .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
@@ -854,25 +916,29 @@ struct ReviewStep: View {
                     VStack(spacing: FFSpacing.md) {
                         SummaryRow(label: "Mode", value: settings.leagueMode.displayName)
                         SummaryRow(label: "Max League Size", value: "Up to \(settings.maxMembers) members")
-                        SummaryRow(label: "Movies Per Player", value: "\(settings.moviesPerPlayer)")
+                        SummaryRow(label: settings.leagueMode == .oscar ? "Picks Per Player" : "Movies Per Player", value: "\(settings.moviesPerPlayer)")
                         SummaryRow(label: "Draft Type", value: settings.draftType.displayName)
                         SummaryRow(label: "Pick Timer", value: settings.pickTimerSeconds == 0 ? "No Time Limit" : formatTime(settings.pickTimerSeconds))
 
                         Divider().background(FFColors.textTertiary.opacity(0.3))
 
-                        if settings.leagueMode != .oscar {
+                        if settings.leagueMode == .oscar {
+                            SummaryRow(label: "Draft Style", value: settings.oscarDraftStyle.displayName)
+                            SummaryRow(label: "Duplicate Picks", value: settings.allowDuplicateOscarPicks ? "Allowed" : "Not Allowed")
+                            SummaryRow(label: "Ceremony Date", value: settings.ceremonyDate.formatted(.dateTime.month().day().year()))
+                        } else {
                             SummaryRow(label: "Scoring", value: settings.scoringMode.shortName)
                             SummaryRow(label: "Goal", value: settings.scoringDirection.displayName)
+
+                            if settings.leagueMode == .boxOffice {
+                                SummaryRow(label: "Cutoff", value: settings.boxOfficeCutoff.displayName)
+                            }
+
+                            Divider().background(FFColors.textTertiary.opacity(0.3))
+
+                            SummaryRow(label: "Trading", value: settings.tradingEnabled ? settings.tradeApprovalMode.displayName : "Disabled")
+                            SummaryRow(label: "Free Agency", value: settings.freeAgencyEnabled ? "Enabled" : "Disabled")
                         }
-
-                        if settings.leagueMode == .boxOffice {
-                            SummaryRow(label: "Cutoff", value: settings.boxOfficeCutoff.displayName)
-                        }
-
-                        Divider().background(FFColors.textTertiary.opacity(0.3))
-
-                        SummaryRow(label: "Trading", value: settings.tradingEnabled ? settings.tradeApprovalMode.displayName : "Disabled")
-                        SummaryRow(label: "Free Agency", value: settings.freeAgencyEnabled ? "Enabled" : "Disabled")
                     }
                 }
 

@@ -448,28 +448,375 @@ enum PopularityTier: String, Codable, Sendable {
     }
 }
 
-// MARK: - Sample Data
+// MARK: - 97th Academy Awards Nominees (2025 Ceremony)
 
 extension OscarNominee {
-    static let sampleNominees: [OscarNominee] = [
+
+    /// Complete nominee data for the 97th Academy Awards (March 2, 2025)
+    /// Covers all 23 categories with full nominee lists
+    static let nominees97th: [OscarNominee] = {
+        let year = 2025
+
+        // MARK: Best Picture
+        let bestPicture: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_picture", name: "Anora", movieId: 1064028),
+            OscarNominee(year: year, categoryId: "best_picture", name: "The Brutalist", movieId: 549509),
+            OscarNominee(year: year, categoryId: "best_picture", name: "A Complete Unknown", movieId: 661539),
+            OscarNominee(year: year, categoryId: "best_picture", name: "Conclave", movieId: 974453),
+            OscarNominee(year: year, categoryId: "best_picture", name: "Dune: Part Two", movieId: 693134),
+            OscarNominee(year: year, categoryId: "best_picture", name: "Emilia Pérez", movieId: 974950),
+            OscarNominee(year: year, categoryId: "best_picture", name: "I'm Still Here", movieId: 1084199),
+            OscarNominee(year: year, categoryId: "best_picture", name: "Nickel Boys", movieId: 1015607),
+            OscarNominee(year: year, categoryId: "best_picture", name: "The Substance", movieId: 933260),
+            OscarNominee(year: year, categoryId: "best_picture", name: "Wicked", movieId: 402431),
+        ]
+
+        // MARK: Best Director
+        let bestDirector: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_director", name: "Sean Baker", movieTitle: "Anora", movieId: 1064028),
+            OscarNominee(year: year, categoryId: "best_director", name: "Brady Corbet", movieTitle: "The Brutalist", movieId: 549509),
+            OscarNominee(year: year, categoryId: "best_director", name: "James Mangold", movieTitle: "A Complete Unknown", movieId: 661539),
+            OscarNominee(year: year, categoryId: "best_director", name: "Jacques Audiard", movieTitle: "Emilia Pérez", movieId: 974950),
+            OscarNominee(year: year, categoryId: "best_director", name: "Coralie Fargeat", movieTitle: "The Substance", movieId: 933260),
+        ]
+
+        // MARK: Best Actor
+        let bestActor: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_actor", name: "Adrien Brody", movieTitle: "The Brutalist", movieId: 549509),
+            OscarNominee(year: year, categoryId: "best_actor", name: "Timothée Chalamet", movieTitle: "A Complete Unknown", movieId: 661539),
+            OscarNominee(year: year, categoryId: "best_actor", name: "Colman Domingo", movieTitle: "Sing Sing", movieId: 1029281),
+            OscarNominee(year: year, categoryId: "best_actor", name: "Ralph Fiennes", movieTitle: "Conclave", movieId: 974453),
+            OscarNominee(year: year, categoryId: "best_actor", name: "Sebastian Stan", movieTitle: "The Apprentice", movieId: 985939),
+        ]
+
+        // MARK: Best Actress
+        let bestActress: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_actress", name: "Cynthia Erivo", movieTitle: "Wicked", movieId: 402431),
+            OscarNominee(year: year, categoryId: "best_actress", name: "Karla Sofía Gascón", movieTitle: "Emilia Pérez", movieId: 974950),
+            OscarNominee(year: year, categoryId: "best_actress", name: "Mikey Madison", movieTitle: "Anora", movieId: 1064028),
+            OscarNominee(year: year, categoryId: "best_actress", name: "Demi Moore", movieTitle: "The Substance", movieId: 933260),
+            OscarNominee(year: year, categoryId: "best_actress", name: "Fernanda Torres", movieTitle: "I'm Still Here", movieId: 1084199),
+        ]
+
+        // MARK: Best Supporting Actor
+        let bestSupportingActor: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_supporting_actor", name: "Yura Borisov", movieTitle: "Anora", movieId: 1064028),
+            OscarNominee(year: year, categoryId: "best_supporting_actor", name: "Kieran Culkin", movieTitle: "A Real Pain", movieId: 1010581),
+            OscarNominee(year: year, categoryId: "best_supporting_actor", name: "Edward Norton", movieTitle: "A Complete Unknown", movieId: 661539),
+            OscarNominee(year: year, categoryId: "best_supporting_actor", name: "Guy Pearce", movieTitle: "The Brutalist", movieId: 549509),
+            OscarNominee(year: year, categoryId: "best_supporting_actor", name: "Jeremy Strong", movieTitle: "The Apprentice", movieId: 985939),
+        ]
+
+        // MARK: Best Supporting Actress
+        let bestSupportingActress: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_supporting_actress", name: "Monica Barbaro", movieTitle: "A Complete Unknown", movieId: 661539),
+            OscarNominee(year: year, categoryId: "best_supporting_actress", name: "Ariana Grande", movieTitle: "Wicked", movieId: 402431),
+            OscarNominee(year: year, categoryId: "best_supporting_actress", name: "Felicity Jones", movieTitle: "The Brutalist", movieId: 549509),
+            OscarNominee(year: year, categoryId: "best_supporting_actress", name: "Isabella Rossellini", movieTitle: "Conclave", movieId: 974453),
+            OscarNominee(year: year, categoryId: "best_supporting_actress", name: "Zoe Saldaña", movieTitle: "Emilia Pérez", movieId: 974950),
+        ]
+
+        // MARK: Best Original Screenplay
+        let bestOriginalScreenplay: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_original_screenplay", name: "Sean Baker", movieTitle: "Anora", movieId: 1064028),
+            OscarNominee(year: year, categoryId: "best_original_screenplay", name: "Brady Corbet & Mona Fastvold", movieTitle: "The Brutalist", movieId: 549509),
+            OscarNominee(year: year, categoryId: "best_original_screenplay", name: "Jesse Eisenberg", movieTitle: "A Real Pain", movieId: 1010581),
+            OscarNominee(year: year, categoryId: "best_original_screenplay", name: "Moritz Binder & Tim Fehlbaum", movieTitle: "September 5", movieId: 1029575),
+            OscarNominee(year: year, categoryId: "best_original_screenplay", name: "Coralie Fargeat", movieTitle: "The Substance", movieId: 933260),
+        ]
+
+        // MARK: Best Adapted Screenplay
+        let bestAdaptedScreenplay: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_adapted_screenplay", name: "James Mangold & Jay Cocks", movieTitle: "A Complete Unknown", movieId: 661539),
+            OscarNominee(year: year, categoryId: "best_adapted_screenplay", name: "Peter Straughan", movieTitle: "Conclave", movieId: 974453),
+            OscarNominee(year: year, categoryId: "best_adapted_screenplay", name: "Jacques Audiard", movieTitle: "Emilia Pérez", movieId: 974950),
+            OscarNominee(year: year, categoryId: "best_adapted_screenplay", name: "RaMell Ross & Joslyn Barnes", movieTitle: "Nickel Boys", movieId: 1015607),
+            OscarNominee(year: year, categoryId: "best_adapted_screenplay", name: "Clint Bentley & Greg Kwedar", movieTitle: "Sing Sing", movieId: 1029281),
+        ]
+
+        // MARK: Best Animated Feature
+        let bestAnimatedFeature: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_animated_feature", name: "Flow", movieId: 823219),
+            OscarNominee(year: year, categoryId: "best_animated_feature", name: "Inside Out 2", movieId: 1022789),
+            OscarNominee(year: year, categoryId: "best_animated_feature", name: "Memoir of a Snail", movieId: 1139817),
+            OscarNominee(year: year, categoryId: "best_animated_feature", name: "Wallace & Gromit: Vengeance Most Fowl", movieId: 959092),
+            OscarNominee(year: year, categoryId: "best_animated_feature", name: "The Wild Robot", movieId: 1184918),
+        ]
+
+        // MARK: Best International Feature Film
+        let bestInternationalFeature: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_international_feature", name: "I'm Still Here", movieTitle: "Brazil", movieId: 1084199),
+            OscarNominee(year: year, categoryId: "best_international_feature", name: "The Girl with the Needle", movieTitle: "Denmark", movieId: 1064486),
+            OscarNominee(year: year, categoryId: "best_international_feature", name: "Emilia Pérez", movieTitle: "France", movieId: 974950),
+            OscarNominee(year: year, categoryId: "best_international_feature", name: "The Seed of the Sacred Fig", movieTitle: "Germany", movieId: 1090753),
+            OscarNominee(year: year, categoryId: "best_international_feature", name: "Flow", movieTitle: "Latvia", movieId: 823219),
+        ]
+
+        // MARK: Best Documentary Feature
+        let bestDocumentaryFeature: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_documentary_feature", name: "Black Box Diaries"),
+            OscarNominee(year: year, categoryId: "best_documentary_feature", name: "No Other Land"),
+            OscarNominee(year: year, categoryId: "best_documentary_feature", name: "Porcelain War"),
+            OscarNominee(year: year, categoryId: "best_documentary_feature", name: "Soundtrack to a Coup d'État"),
+            OscarNominee(year: year, categoryId: "best_documentary_feature", name: "Sugarcane"),
+        ]
+
+        // MARK: Best Cinematography
+        let bestCinematography: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_cinematography", name: "Lol Crawley", movieTitle: "The Brutalist", movieId: 549509),
+            OscarNominee(year: year, categoryId: "best_cinematography", name: "Greig Fraser", movieTitle: "Dune: Part Two", movieId: 693134),
+            OscarNominee(year: year, categoryId: "best_cinematography", name: "Paul Guilhaume", movieTitle: "Emilia Pérez", movieId: 974950),
+            OscarNominee(year: year, categoryId: "best_cinematography", name: "Ed Lachman", movieTitle: "Maria", movieId: 840705),
+            OscarNominee(year: year, categoryId: "best_cinematography", name: "Jarin Blaschke", movieTitle: "Nosferatu", movieId: 426063),
+        ]
+
+        // MARK: Best Film Editing
+        let bestFilmEditing: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_film_editing", name: "Anora", movieId: 1064028),
+            OscarNominee(year: year, categoryId: "best_film_editing", name: "The Brutalist", movieId: 549509),
+            OscarNominee(year: year, categoryId: "best_film_editing", name: "Conclave", movieId: 974453),
+            OscarNominee(year: year, categoryId: "best_film_editing", name: "Emilia Pérez", movieId: 974950),
+            OscarNominee(year: year, categoryId: "best_film_editing", name: "Wicked", movieId: 402431),
+        ]
+
+        // MARK: Best Production Design
+        let bestProductionDesign: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_production_design", name: "The Brutalist", movieId: 549509),
+            OscarNominee(year: year, categoryId: "best_production_design", name: "Conclave", movieId: 974453),
+            OscarNominee(year: year, categoryId: "best_production_design", name: "Dune: Part Two", movieId: 693134),
+            OscarNominee(year: year, categoryId: "best_production_design", name: "Nosferatu", movieId: 426063),
+            OscarNominee(year: year, categoryId: "best_production_design", name: "Wicked", movieId: 402431),
+        ]
+
+        // MARK: Best Costume Design
+        let bestCostumeDesign: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_costume_design", name: "A Complete Unknown", movieId: 661539),
+            OscarNominee(year: year, categoryId: "best_costume_design", name: "Conclave", movieId: 974453),
+            OscarNominee(year: year, categoryId: "best_costume_design", name: "Gladiator II", movieId: 558449),
+            OscarNominee(year: year, categoryId: "best_costume_design", name: "Nosferatu", movieId: 426063),
+            OscarNominee(year: year, categoryId: "best_costume_design", name: "Wicked", movieId: 402431),
+        ]
+
+        // MARK: Best Makeup and Hairstyling
+        let bestMakeupHairstyling: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_makeup_hairstyling", name: "A Different Man", movieId: 840430),
+            OscarNominee(year: year, categoryId: "best_makeup_hairstyling", name: "Emilia Pérez", movieId: 974950),
+            OscarNominee(year: year, categoryId: "best_makeup_hairstyling", name: "Nosferatu", movieId: 426063),
+            OscarNominee(year: year, categoryId: "best_makeup_hairstyling", name: "The Substance", movieId: 933260),
+            OscarNominee(year: year, categoryId: "best_makeup_hairstyling", name: "Wicked", movieId: 402431),
+        ]
+
+        // MARK: Best Sound
+        let bestSound: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_sound", name: "A Complete Unknown", movieId: 661539),
+            OscarNominee(year: year, categoryId: "best_sound", name: "Dune: Part Two", movieId: 693134),
+            OscarNominee(year: year, categoryId: "best_sound", name: "Emilia Pérez", movieId: 974950),
+            OscarNominee(year: year, categoryId: "best_sound", name: "Wicked", movieId: 402431),
+            OscarNominee(year: year, categoryId: "best_sound", name: "The Wild Robot", movieId: 1184918),
+        ]
+
+        // MARK: Best Original Score
+        let bestOriginalScore: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_original_score", name: "Daniel Blumberg", movieTitle: "The Brutalist", movieId: 549509),
+            OscarNominee(year: year, categoryId: "best_original_score", name: "Volker Bertelmann", movieTitle: "Conclave", movieId: 974453),
+            OscarNominee(year: year, categoryId: "best_original_score", name: "Clément Ducol & Camille", movieTitle: "Emilia Pérez", movieId: 974950),
+            OscarNominee(year: year, categoryId: "best_original_score", name: "John Powell & Stephen Schwartz", movieTitle: "Wicked", movieId: 402431),
+            OscarNominee(year: year, categoryId: "best_original_score", name: "Kris Bowers", movieTitle: "The Wild Robot", movieId: 1184918),
+        ]
+
+        // MARK: Best Original Song
+        let bestOriginalSong: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_original_song", name: "\"El Mal\"", movieTitle: "Emilia Pérez", movieId: 974950, details: "Music & Lyrics by Clément Ducol, Camille, Jacques Audiard"),
+            OscarNominee(year: year, categoryId: "best_original_song", name: "\"The Journey\"", movieTitle: "The Six Triple Eight", details: "Music & Lyrics by Diane Warren"),
+            OscarNominee(year: year, categoryId: "best_original_song", name: "\"Like a Bird\"", movieTitle: "Sing Sing", movieId: 1029281, details: "Music & Lyrics by Abraham Alexander, Adrian Quesada"),
+            OscarNominee(year: year, categoryId: "best_original_song", name: "\"Mi Camino\"", movieTitle: "Emilia Pérez", movieId: 974950, details: "Music & Lyrics by Clément Ducol, Camille"),
+            OscarNominee(year: year, categoryId: "best_original_song", name: "\"Never Too Late\"", movieTitle: "Elton John: Never Too Late", details: "Music & Lyrics by Elton John, Brandi Carlile"),
+        ]
+
+        // MARK: Best Visual Effects
+        let bestVisualEffects: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_visual_effects", name: "Alien: Romulus", movieId: 945961),
+            OscarNominee(year: year, categoryId: "best_visual_effects", name: "Better Man", movieId: 554729),
+            OscarNominee(year: year, categoryId: "best_visual_effects", name: "Dune: Part Two", movieId: 693134),
+            OscarNominee(year: year, categoryId: "best_visual_effects", name: "Kingdom of the Planet of the Apes", movieId: 653346),
+            OscarNominee(year: year, categoryId: "best_visual_effects", name: "Wicked", movieId: 402431),
+        ]
+
+        // MARK: Best Animated Short Film
+        let bestAnimatedShort: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_animated_short", name: "Beautiful Men"),
+            OscarNominee(year: year, categoryId: "best_animated_short", name: "In the Shadow of the Cypress"),
+            OscarNominee(year: year, categoryId: "best_animated_short", name: "Magic Candies"),
+            OscarNominee(year: year, categoryId: "best_animated_short", name: "Wander to Wonder"),
+            OscarNominee(year: year, categoryId: "best_animated_short", name: "Yuck!"),
+        ]
+
+        // MARK: Best Live Action Short Film
+        let bestLiveActionShort: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_live_action_short", name: "A Lien"),
+            OscarNominee(year: year, categoryId: "best_live_action_short", name: "Anuja"),
+            OscarNominee(year: year, categoryId: "best_live_action_short", name: "I'm Not a Robot"),
+            OscarNominee(year: year, categoryId: "best_live_action_short", name: "The Last Ranger"),
+            OscarNominee(year: year, categoryId: "best_live_action_short", name: "The Man Who Could Not Remain Silent"),
+        ]
+
+        // MARK: Best Documentary Short Film
+        let bestDocumentaryShort: [OscarNominee] = [
+            OscarNominee(year: year, categoryId: "best_documentary_short", name: "Death by Numbers"),
+            OscarNominee(year: year, categoryId: "best_documentary_short", name: "I Am Ready, Warden"),
+            OscarNominee(year: year, categoryId: "best_documentary_short", name: "Incident"),
+            OscarNominee(year: year, categoryId: "best_documentary_short", name: "Instruments of a Beating Heart"),
+            OscarNominee(year: year, categoryId: "best_documentary_short", name: "The Only Girl in the Orchestra"),
+        ]
+
+        return bestPicture + bestDirector + bestActor + bestActress
+            + bestSupportingActor + bestSupportingActress
+            + bestOriginalScreenplay + bestAdaptedScreenplay
+            + bestAnimatedFeature + bestInternationalFeature
+            + bestDocumentaryFeature + bestCinematography
+            + bestFilmEditing + bestProductionDesign
+            + bestCostumeDesign + bestMakeupHairstyling
+            + bestSound + bestOriginalScore + bestOriginalSong
+            + bestVisualEffects + bestAnimatedShort
+            + bestLiveActionShort + bestDocumentaryShort
+    }()
+
+    /// Backwards-compatible alias
+    static let sampleNominees = nominees97th
+}
+
+// MARK: - Expert Consensus Odds (Pre-Ceremony)
+
+extension OscarNominee {
+
+    /// Expert consensus odds based on Gold Derby / prediction aggregators
+    /// Updated pre-ceremony - maps nominee name+category to win probability
+    static let expertOdds: [String: Double] = [
         // Best Picture
-        OscarNominee(year: 2026, categoryId: "best_picture", name: "The Brutalist", movieId: 1, posterPath: nil, isWinner: false),
-        OscarNominee(year: 2026, categoryId: "best_picture", name: "Anora", movieId: 2, posterPath: nil, isWinner: false),
-        OscarNominee(year: 2026, categoryId: "best_picture", name: "Conclave", movieId: 3, posterPath: nil, isWinner: false),
-        OscarNominee(year: 2026, categoryId: "best_picture", name: "Emilia Pérez", movieId: 4, posterPath: nil, isWinner: false),
-        OscarNominee(year: 2026, categoryId: "best_picture", name: "Wicked", movieId: 5, posterPath: nil, isWinner: false),
+        "Anora_best_picture": 0.32,
+        "The Brutalist_best_picture": 0.22,
+        "Conclave_best_picture": 0.15,
+        "Emilia Pérez_best_picture": 0.10,
+        "The Substance_best_picture": 0.06,
+        "Wicked_best_picture": 0.05,
+        "Dune: Part Two_best_picture": 0.04,
+        "A Complete Unknown_best_picture": 0.03,
+        "I'm Still Here_best_picture": 0.02,
+        "Nickel Boys_best_picture": 0.01,
+
+        // Best Director
+        "Brady Corbet_best_director": 0.35,
+        "Sean Baker_best_director": 0.30,
+        "Jacques Audiard_best_director": 0.15,
+        "Coralie Fargeat_best_director": 0.12,
+        "James Mangold_best_director": 0.08,
 
         // Best Actor
-        OscarNominee(year: 2026, categoryId: "best_actor", name: "Adrien Brody", movieTitle: "The Brutalist", movieId: 1),
-        OscarNominee(year: 2026, categoryId: "best_actor", name: "Timothée Chalamet", movieTitle: "A Complete Unknown", movieId: 6),
-        OscarNominee(year: 2026, categoryId: "best_actor", name: "Ralph Fiennes", movieTitle: "Conclave", movieId: 3),
+        "Adrien Brody_best_actor": 0.50,
+        "Timothée Chalamet_best_actor": 0.25,
+        "Ralph Fiennes_best_actor": 0.12,
+        "Sebastian Stan_best_actor": 0.08,
+        "Colman Domingo_best_actor": 0.05,
 
         // Best Actress
-        OscarNominee(year: 2026, categoryId: "best_actress", name: "Demi Moore", movieTitle: "The Substance", movieId: 7),
-        OscarNominee(year: 2026, categoryId: "best_actress", name: "Mikey Madison", movieTitle: "Anora", movieId: 2),
-        OscarNominee(year: 2026, categoryId: "best_actress", name: "Cynthia Erivo", movieTitle: "Wicked", movieId: 5)
+        "Demi Moore_best_actress": 0.40,
+        "Mikey Madison_best_actress": 0.22,
+        "Fernanda Torres_best_actress": 0.18,
+        "Cynthia Erivo_best_actress": 0.12,
+        "Karla Sofía Gascón_best_actress": 0.08,
+
+        // Best Supporting Actor
+        "Kieran Culkin_best_supporting_actor": 0.45,
+        "Yura Borisov_best_supporting_actor": 0.20,
+        "Jeremy Strong_best_supporting_actor": 0.15,
+        "Edward Norton_best_supporting_actor": 0.12,
+        "Guy Pearce_best_supporting_actor": 0.08,
+
+        // Best Supporting Actress
+        "Zoe Saldaña_best_supporting_actress": 0.45,
+        "Ariana Grande_best_supporting_actress": 0.20,
+        "Isabella Rossellini_best_supporting_actress": 0.15,
+        "Monica Barbaro_best_supporting_actress": 0.12,
+        "Felicity Jones_best_supporting_actress": 0.08,
+
+        // Best Original Screenplay
+        "Sean Baker_best_original_screenplay": 0.35,
+        "Jesse Eisenberg_best_original_screenplay": 0.25,
+        "Brady Corbet & Mona Fastvold_best_original_screenplay": 0.20,
+        "Coralie Fargeat_best_original_screenplay": 0.12,
+        "Moritz Binder & Tim Fehlbaum_best_original_screenplay": 0.08,
+
+        // Best Adapted Screenplay
+        "Peter Straughan_best_adapted_screenplay": 0.35,
+        "Jacques Audiard_best_adapted_screenplay": 0.25,
+        "RaMell Ross & Joslyn Barnes_best_adapted_screenplay": 0.18,
+        "James Mangold & Jay Cocks_best_adapted_screenplay": 0.12,
+        "Clint Bentley & Greg Kwedar_best_adapted_screenplay": 0.10,
+
+        // Best Animated Feature
+        "The Wild Robot_best_animated_feature": 0.40,
+        "Flow_best_animated_feature": 0.25,
+        "Inside Out 2_best_animated_feature": 0.18,
+        "Wallace & Gromit: Vengeance Most Fowl_best_animated_feature": 0.10,
+        "Memoir of a Snail_best_animated_feature": 0.07,
+
+        // Best International Feature Film
+        "I'm Still Here_best_international_feature": 0.35,
+        "Emilia Pérez_best_international_feature": 0.25,
+        "The Seed of the Sacred Fig_best_international_feature": 0.20,
+        "Flow_best_international_feature": 0.12,
+        "The Girl with the Needle_best_international_feature": 0.08,
+
+        // Best Cinematography
+        "Lol Crawley_best_cinematography": 0.35,
+        "Greig Fraser_best_cinematography": 0.25,
+        "Jarin Blaschke_best_cinematography": 0.20,
+        "Ed Lachman_best_cinematography": 0.12,
+        "Paul Guilhaume_best_cinematography": 0.08,
+
+        // Best Visual Effects
+        "Dune: Part Two_best_visual_effects": 0.40,
+        "Wicked_best_visual_effects": 0.25,
+        "Better Man_best_visual_effects": 0.15,
+        "Alien: Romulus_best_visual_effects": 0.12,
+        "Kingdom of the Planet of the Apes_best_visual_effects": 0.08,
+
+        // Best Original Score
+        "Daniel Blumberg_best_original_score": 0.35,
+        "Kris Bowers_best_original_score": 0.25,
+        "Volker Bertelmann_best_original_score": 0.18,
+        "Clément Ducol & Camille_best_original_score": 0.12,
+        "John Powell & Stephen Schwartz_best_original_score": 0.10,
+
+        // Best Original Song
+        "\"El Mal\"_best_original_song": 0.30,
+        "\"Never Too Late\"_best_original_song": 0.25,
+        "\"Like a Bird\"_best_original_song": 0.20,
+        "\"The Journey\"_best_original_song": 0.15,
+        "\"Mi Camino\"_best_original_song": 0.10,
     ]
+
+    /// Get the expert consensus odds for this nominee
+    var odds: Double? {
+        OscarNominee.expertOdds["\(name)_\(categoryId)"]
+    }
+
+    /// Formatted odds string (e.g., "35%")
+    var oddsString: String? {
+        guard let odds = odds else { return nil }
+        return "\(Int(odds * 100))%"
+    }
+
+    /// Whether this nominee is the frontrunner in their category
+    var isFrontrunner: Bool {
+        guard let myOdds = odds else { return false }
+        let categoryNominees = OscarNominee.nominees97th.filter { $0.categoryId == categoryId }
+        let maxOdds = categoryNominees.compactMap { $0.odds }.max() ?? 0
+        return myOdds == maxOdds
+    }
 }
+
+// MARK: - Sample Data
 
 extension OscarPick {
     static let sample = OscarPick(

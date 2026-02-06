@@ -3,6 +3,7 @@
 //  FantasyFlicks
 //
 //  Oscar prediction draft room - pick nominees for each category
+//  Features search/filter, expert odds, roster %, and ADP
 //
 
 import SwiftUI
@@ -14,10 +15,10 @@ struct OscarDraftView: View {
 
     @StateObject private var viewModel = OscarDraftViewModel()
     @State private var selectedTab: OscarDraftTab = .categories
-    @State private var selectedCategoryId: String?
     @State private var showConfirmPick = false
     @State private var selectedNominee: OscarNominee?
     @State private var selectedCategory: OscarCategory?
+    @State private var showSearch = false
     @Environment(\.dismiss) private var dismiss
 
     enum OscarDraftTab: String, CaseIterable {
@@ -33,18 +34,20 @@ struct OscarDraftView: View {
 
             if viewModel.isLoading && viewModel.draftStatus == .pending {
                 loadingView
+            } else if viewModel.isDraftComplete {
+                draftCompleteView
             } else {
                 VStack(spacing: 0) {
-                    // Header
                     oscarDraftHeader
-
-                    // Current pick banner
                     currentPickBanner
 
-                    // Tab selector
+                    // Search bar (when active)
+                    if showSearch {
+                        searchBar
+                    }
+
                     tabSelector
 
-                    // Content
                     TabView(selection: $selectedTab) {
                         categoriesView
                             .tag(OscarDraftTab.categories)
@@ -71,6 +74,7 @@ struct OscarDraftView: View {
                 OscarConfirmPickSheet(
                     nominee: nominee,
                     category: category,
+                    viewModel: viewModel,
                     isSubmitting: viewModel.isSubmittingPick
                 ) {
                     Task {
@@ -116,7 +120,7 @@ struct OscarDraftView: View {
             Button {
                 dismiss()
             } label: {
-                Image(systemName: "xmark")
+                Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(FFColors.textSecondary)
                     .frame(width: 36, height: 36)
@@ -136,59 +140,92 @@ struct OscarDraftView: View {
                         .foregroundColor(FFColors.textPrimary)
                 }
 
-                Text("Oscar Predictions - Round \(viewModel.currentRound) of \(viewModel.totalRounds)")
+                Text("Round \(viewModel.currentRound) of \(viewModel.totalRounds)")
                     .font(FFTypography.caption)
                     .foregroundColor(FFColors.textSecondary)
             }
 
             Spacer()
 
-            // Timer or no-limit indicator
-            if viewModel.pickTimerSeconds > 0 {
-                TimerView(remainingTime: viewModel.remainingTime)
-            } else {
-                HStack(spacing: 4) {
-                    Image(systemName: "infinity")
-                        .font(.system(size: 12))
-                    Text("No Limit")
-                        .font(.system(size: 12, weight: .semibold))
+            HStack(spacing: FFSpacing.sm) {
+                // Search toggle
+                Button {
+                    withAnimation(FFAnimations.snappy) {
+                        showSearch.toggle()
+                        if !showSearch {
+                            viewModel.searchQuery = ""
+                        }
+                    }
+                } label: {
+                    Image(systemName: showSearch ? "xmark" : "magnifyingglass")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(showSearch ? FFColors.goldPrimary : FFColors.textSecondary)
+                        .frame(width: 36, height: 36)
+                        .background(showSearch ? FFColors.goldPrimary.opacity(0.15) : FFColors.backgroundElevated)
+                        .clipShape(Circle())
                 }
-                .foregroundColor(FFColors.goldPrimary)
-                .padding(.horizontal, FFSpacing.sm)
-                .padding(.vertical, FFSpacing.xs)
-                .background(FFColors.goldPrimary.opacity(0.15))
-                .clipShape(Capsule())
+
+                // Timer
+                if viewModel.pickTimerSeconds > 0 {
+                    TimerView(remainingTime: viewModel.remainingTime)
+                }
             }
         }
-        .padding()
+        .padding(.horizontal)
+        .padding(.vertical, FFSpacing.sm)
         .background(FFColors.backgroundElevated)
+    }
+
+    // MARK: - Search Bar
+
+    private var searchBar: some View {
+        HStack(spacing: FFSpacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(FFColors.textTertiary)
+
+            TextField("Search nominees, movies...", text: $viewModel.searchQuery)
+                .font(FFTypography.bodyMedium)
+                .foregroundColor(FFColors.textPrimary)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+
+            if !viewModel.searchQuery.isEmpty {
+                Button {
+                    viewModel.searchQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(FFColors.textTertiary)
+                }
+            }
+        }
+        .padding(.horizontal, FFSpacing.md)
+        .padding(.vertical, FFSpacing.sm)
+        .background(FFColors.backgroundDark)
+        .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+        .padding(.horizontal)
+        .padding(.vertical, FFSpacing.xs)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     // MARK: - Current Pick Banner
 
     private var currentPickBanner: some View {
         Group {
-            if viewModel.isDraftComplete {
-                HStack(spacing: FFSpacing.md) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(FFColors.success)
-                    Text("Draft Complete!")
-                        .font(FFTypography.headlineSmall)
-                        .foregroundColor(FFColors.success)
-                    Spacer()
-                }
-                .padding()
-                .background(FFColors.success.opacity(0.15))
-            } else if viewModel.isMyTurn {
+            if viewModel.isMyTurn {
                 HStack(spacing: FFSpacing.md) {
                     Circle()
                         .fill(FFColors.goldPrimary)
                         .frame(width: 10, height: 10)
                         .modifier(PulsingModifier())
 
-                    Text("Your Pick!")
-                        .font(FFTypography.headlineSmall)
-                        .foregroundColor(FFColors.goldPrimary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Your Pick!")
+                            .font(FFTypography.headlineSmall)
+                            .foregroundColor(FFColors.goldPrimary)
+                        Text("Choose a nominee from any category")
+                            .font(FFTypography.caption)
+                            .foregroundColor(FFColors.textSecondary)
+                    }
 
                     Spacer()
 
@@ -197,16 +234,16 @@ struct OscarDraftView: View {
                         .foregroundColor(FFColors.goldPrimary)
                 }
                 .padding()
-                .background(FFColors.goldPrimary.opacity(0.15))
-            } else {
+                .background(FFColors.goldPrimary.opacity(0.12))
+            } else if viewModel.draftStatus == .inProgress {
                 HStack(spacing: FFSpacing.md) {
-                    Text("Pick \(viewModel.totalPicksMade + 1) of \(viewModel.totalPicksNeeded)")
-                        .font(FFTypography.labelMedium)
-                        .foregroundColor(FFColors.textSecondary)
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(FFColors.textSecondary)
 
                     Text("Waiting for pick...")
                         .font(FFTypography.bodyMedium)
-                        .foregroundColor(FFColors.textTertiary)
+                        .foregroundColor(FFColors.textSecondary)
 
                     Spacer()
 
@@ -259,7 +296,6 @@ struct OscarDraftView: View {
     private var categoriesView: some View {
         ScrollView {
             LazyVStack(spacing: FFSpacing.md) {
-                // Major categories first
                 let majorCats = viewModel.availableCategories.filter { $0.isMajor }
                 let otherCats = viewModel.availableCategories.filter { !$0.isMajor }
 
@@ -275,9 +311,10 @@ struct OscarDraftView: View {
                     ForEach(majorCats) { category in
                         OscarCategoryCard(
                             category: category,
-                            nominees: viewModel.nominees(for: category.id),
+                            nominees: viewModel.filteredNominees(for: category.id),
                             isPicked: viewModel.hasPickedCategory(category.id),
                             isPickable: viewModel.isMyTurn && !viewModel.hasPickedCategory(category.id),
+                            viewModel: viewModel,
                             onSelectNominee: { nominee in
                                 selectedCategory = category
                                 selectedNominee = nominee
@@ -300,9 +337,10 @@ struct OscarDraftView: View {
                     ForEach(otherCats) { category in
                         OscarCategoryCard(
                             category: category,
-                            nominees: viewModel.nominees(for: category.id),
+                            nominees: viewModel.filteredNominees(for: category.id),
                             isPicked: viewModel.hasPickedCategory(category.id),
                             isPickable: viewModel.isMyTurn && !viewModel.hasPickedCategory(category.id),
+                            viewModel: viewModel,
                             onSelectNominee: { nominee in
                                 selectedCategory = category
                                 selectedNominee = nominee
@@ -339,14 +377,15 @@ struct OscarDraftView: View {
     private var myPicksView: some View {
         ScrollView {
             VStack(spacing: FFSpacing.lg) {
-                VStack(spacing: FFSpacing.sm) {
-                    Text("Your Predictions")
-                        .font(FFTypography.headlineMedium)
-                        .foregroundColor(FFColors.textPrimary)
-
-                    Text("\(viewModel.myPicks.count) of \(viewModel.totalRounds) picks made")
-                        .font(FFTypography.bodyMedium)
-                        .foregroundColor(FFColors.textSecondary)
+                // Stats header
+                HStack(spacing: FFSpacing.lg) {
+                    StatBubble(value: "\(viewModel.myPicks.count)", label: "Picks", color: FFColors.goldPrimary)
+                    StatBubble(value: "\(viewModel.totalRounds)", label: "Total", color: FFColors.textSecondary)
+                    StatBubble(
+                        value: "\(viewModel.totalRounds - viewModel.myPicks.count)",
+                        label: "Remaining",
+                        color: viewModel.myPicks.count < viewModel.totalRounds ? FFColors.ruby : FFColors.success
+                    )
                 }
                 .padding(.top)
 
@@ -389,15 +428,9 @@ struct OscarDraftView: View {
                         .font(FFTypography.headlineMedium)
                         .foregroundColor(FFColors.textPrimary)
 
-                    if viewModel.isDraftComplete {
-                        Text("Draft complete - awaiting ceremony results")
-                            .font(FFTypography.bodyMedium)
-                            .foregroundColor(FFColors.textSecondary)
-                    } else {
-                        Text("Live draft standings")
-                            .font(FFTypography.bodyMedium)
-                            .foregroundColor(FFColors.textSecondary)
-                    }
+                    Text("Live draft standings")
+                        .font(FFTypography.bodyMedium)
+                        .foregroundColor(FFColors.textSecondary)
                 }
                 .padding(.top)
 
@@ -470,6 +503,168 @@ struct OscarDraftView: View {
             .padding(.bottom, 60)
         }
     }
+
+    // MARK: - Draft Complete View
+
+    private var draftCompleteView: some View {
+        ScrollView {
+            VStack(spacing: FFSpacing.xl) {
+                // Trophy animation area
+                VStack(spacing: FFSpacing.lg) {
+                    ZStack {
+                        Circle()
+                            .fill(FFColors.goldPrimary.opacity(0.15))
+                            .frame(width: 120, height: 120)
+
+                        Circle()
+                            .fill(FFColors.goldPrimary.opacity(0.08))
+                            .frame(width: 160, height: 160)
+
+                        Image(systemName: "trophy.fill")
+                            .font(.system(size: 56))
+                            .foregroundStyle(FFColors.goldGradient)
+                    }
+                    .padding(.top, FFSpacing.xxxl)
+
+                    Text("Draft Complete!")
+                        .font(FFTypography.displaySmall)
+                        .foregroundColor(FFColors.textPrimary)
+
+                    Text("Your predictions are locked in for \(leagueName)")
+                        .font(FFTypography.bodyMedium)
+                        .foregroundColor(FFColors.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                // Results summary
+                GlassCard {
+                    VStack(spacing: FFSpacing.md) {
+                        Text("YOUR PREDICTIONS")
+                            .font(FFTypography.overline)
+                            .foregroundColor(FFColors.goldPrimary)
+
+                        ForEach(viewModel.myPicks) { pick in
+                            HStack(spacing: FFSpacing.md) {
+                                if let category = pick.category {
+                                    Image(systemName: category.icon)
+                                        .font(.system(size: 14))
+                                        .foregroundColor(FFColors.goldPrimary)
+                                        .frame(width: 28, height: 28)
+                                        .background(FFColors.goldPrimary.opacity(0.15))
+                                        .clipShape(Circle())
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(pick.category?.shortName ?? "")
+                                        .font(FFTypography.caption)
+                                        .foregroundColor(FFColors.textTertiary)
+                                    Text(pick.nomineeName)
+                                        .font(FFTypography.labelMedium)
+                                        .foregroundColor(FFColors.textPrimary)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+
+                                if let isCorrect = pick.isCorrect {
+                                    Image(systemName: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(isCorrect ? FFColors.success : FFColors.ruby)
+                                } else {
+                                    Text("Pending")
+                                        .font(FFTypography.caption)
+                                        .foregroundColor(FFColors.textTertiary)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(FFColors.backgroundDark)
+                                        .clipShape(Capsule())
+                                }
+                            }
+
+                            if pick.id != viewModel.myPicks.last?.id {
+                                Divider().background(Color.white.opacity(0.05))
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+
+                // Standings
+                if !viewModel.standings.isEmpty {
+                    GlassCard {
+                        VStack(spacing: FFSpacing.md) {
+                            Text("STANDINGS")
+                                .font(FFTypography.overline)
+                                .foregroundColor(FFColors.goldPrimary)
+
+                            ForEach(viewModel.standings) { standing in
+                                OscarStandingRow(
+                                    standing: standing,
+                                    isMe: standing.userId == AuthenticationService.shared.currentUser?.id
+                                )
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+
+                // Ceremony countdown
+                if let settings = viewModel.oscarSettings, let ceremonyDate = settings.ceremonyDate {
+                    GlassCard {
+                        VStack(spacing: FFSpacing.md) {
+                            Image(systemName: "calendar.badge.clock")
+                                .font(.system(size: 28))
+                                .foregroundStyle(FFColors.goldGradient)
+
+                            Text("Oscar Ceremony")
+                                .font(FFTypography.headlineSmall)
+                                .foregroundColor(FFColors.textPrimary)
+
+                            Text(ceremonyDate, format: .dateTime.month().day().year())
+                                .font(FFTypography.titleMedium)
+                                .foregroundColor(FFColors.goldPrimary)
+
+                            Text("Results will be scored live during the ceremony")
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textSecondary)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+
+                // Back button
+                GoldButton(title: "Back to Leagues", icon: "arrow.left", fullWidth: true) {
+                    dismiss()
+                }
+                .padding(.horizontal)
+                .padding(.bottom, FFSpacing.xxxl)
+            }
+        }
+    }
+}
+
+// MARK: - Stat Bubble
+
+private struct StatBubble: View {
+    let value: String
+    let label: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(FFTypography.displaySmall)
+                .foregroundColor(color)
+            Text(label)
+                .font(FFTypography.caption)
+                .foregroundColor(FFColors.textTertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, FFSpacing.md)
+        .background(FFColors.backgroundElevated)
+        .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+    }
 }
 
 // MARK: - Oscar Category Card
@@ -479,6 +674,7 @@ struct OscarCategoryCard: View {
     let nominees: [OscarNominee]
     let isPicked: Bool
     let isPickable: Bool
+    let viewModel: OscarDraftViewModel
     let onSelectNominee: (OscarNominee) -> Void
 
     @State private var isExpanded = false
@@ -527,9 +723,9 @@ struct OscarCategoryCard: View {
 
             // Nominees list (expanded)
             if isExpanded {
-                VStack(spacing: FFSpacing.sm) {
+                VStack(spacing: 0) {
                     if nominees.isEmpty {
-                        Text("Nominees not yet announced")
+                        Text("No nominees match your search")
                             .font(FFTypography.bodySmall)
                             .foregroundColor(FFColors.textTertiary)
                             .padding()
@@ -538,12 +734,19 @@ struct OscarCategoryCard: View {
                             NomineeRow(
                                 nominee: nominee,
                                 isPickable: isPickable && !isPicked,
+                                isNomineePicked: viewModel.isNomineePicked(nominee.id, in: category.id),
+                                rosterPct: viewModel.rosterPercentageString(for: nominee.id, categoryId: category.id),
                                 onSelect: { onSelectNominee(nominee) }
                             )
+
+                            if nominee.id != nominees.last?.id {
+                                Divider()
+                                    .background(Color.white.opacity(0.05))
+                                    .padding(.horizontal)
+                            }
                         }
                     }
                 }
-                .padding(.horizontal)
                 .padding(.bottom, FFSpacing.md)
             }
         }
@@ -564,6 +767,8 @@ struct OscarCategoryCard: View {
 struct NomineeRow: View {
     let nominee: OscarNominee
     let isPickable: Bool
+    let isNomineePicked: Bool
+    let rosterPct: String
     let onSelect: () -> Void
 
     var body: some View {
@@ -573,34 +778,72 @@ struct NomineeRow: View {
                 AsyncImage(url: url) { image in
                     image.resizable().aspectRatio(contentMode: .fill)
                 } placeholder: {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(FFColors.backgroundDark)
+                    posterPlaceholder
                 }
-                .frame(width: 36, height: 54)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .frame(width: 40, height: 60)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             } else {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(FFColors.backgroundDark)
-                    .frame(width: 36, height: 54)
-                    .overlay {
-                        Image(systemName: "film")
-                            .font(.system(size: 12))
-                            .foregroundColor(FFColors.textTertiary)
-                    }
+                posterPlaceholder
             }
 
-            // Nominee info
-            VStack(alignment: .leading, spacing: 2) {
+            // Nominee info + odds
+            VStack(alignment: .leading, spacing: 4) {
                 Text(nominee.name)
                     .font(FFTypography.labelMedium)
-                    .foregroundColor(FFColors.textPrimary)
+                    .foregroundColor(isNomineePicked ? FFColors.textTertiary : FFColors.textPrimary)
                     .lineLimit(1)
+                    .strikethrough(isNomineePicked)
 
                 if let movie = nominee.movieTitle {
                     Text(movie)
                         .font(FFTypography.caption)
                         .foregroundColor(FFColors.textSecondary)
                         .lineLimit(1)
+                }
+
+                // Odds + Roster % row
+                HStack(spacing: FFSpacing.sm) {
+                    if let oddsStr = nominee.oddsString {
+                        HStack(spacing: 2) {
+                            Image(systemName: "chart.bar.fill")
+                                .font(.system(size: 8))
+                            Text(oddsStr)
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(nominee.isFrontrunner ? FFColors.goldPrimary : FFColors.textTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background((nominee.isFrontrunner ? FFColors.goldPrimary : FFColors.textTertiary).opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+
+                    if rosterPct != "0%" {
+                        HStack(spacing: 2) {
+                            Image(systemName: "person.2.fill")
+                                .font(.system(size: 8))
+                            Text(rosterPct)
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(FFColors.textTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(FFColors.textTertiary.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+
+                    if nominee.isFrontrunner {
+                        HStack(spacing: 2) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 8))
+                            Text("Favorite")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(FFColors.ruby)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(FFColors.ruby.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
                 }
 
                 if nominee.isWinner {
@@ -617,7 +860,7 @@ struct NomineeRow: View {
             Spacer()
 
             // Pick button
-            if isPickable {
+            if isPickable && !isNomineePicked {
                 Button(action: onSelect) {
                     Text("Pick")
                         .font(FFTypography.labelMedium)
@@ -627,9 +870,30 @@ struct NomineeRow: View {
                         .background(FFColors.goldGradientHorizontal)
                         .clipShape(Capsule())
                 }
+            } else if isNomineePicked {
+                Text("Taken")
+                    .font(FFTypography.caption)
+                    .foregroundColor(FFColors.textTertiary)
+                    .padding(.horizontal, FFSpacing.sm)
+                    .padding(.vertical, FFSpacing.xs)
+                    .background(FFColors.backgroundDark)
+                    .clipShape(Capsule())
             }
         }
-        .padding(.vertical, FFSpacing.xs)
+        .padding(.horizontal)
+        .padding(.vertical, FFSpacing.sm)
+        .opacity(isNomineePicked ? 0.5 : 1.0)
+    }
+
+    private var posterPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(FFColors.backgroundDark)
+            .frame(width: 40, height: 60)
+            .overlay {
+                Image(systemName: "film")
+                    .font(.system(size: 14))
+                    .foregroundColor(FFColors.textTertiary)
+            }
     }
 }
 
@@ -640,7 +904,6 @@ struct OscarPickCard: View {
 
     var body: some View {
         HStack(spacing: FFSpacing.md) {
-            // Category icon
             if let category = pick.category {
                 Image(systemName: category.icon)
                     .font(.system(size: 18))
@@ -668,7 +931,6 @@ struct OscarPickCard: View {
 
             Spacer()
 
-            // Result indicator
             if let isCorrect = pick.isCorrect {
                 Image(systemName: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .font(.system(size: 24))
@@ -697,7 +959,6 @@ struct OscarStandingRow: View {
 
     var body: some View {
         HStack(spacing: FFSpacing.md) {
-            // Rank
             ZStack {
                 Circle()
                     .fill(standing.rank <= 3 ? FFColors.goldPrimary.opacity(0.2) : FFColors.backgroundDark)
@@ -762,7 +1023,6 @@ struct OscarHistoryRow: View {
 
     var body: some View {
         HStack(spacing: FFSpacing.md) {
-            // Category icon
             if let category = pick.category {
                 Image(systemName: category.icon)
                     .font(.system(size: 14))
@@ -791,7 +1051,6 @@ struct OscarHistoryRow: View {
 
             Spacer()
 
-            // Result
             if let isCorrect = pick.isCorrect {
                 Image(systemName: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .foregroundColor(isCorrect ? FFColors.success : FFColors.ruby)
@@ -809,6 +1068,7 @@ struct OscarHistoryRow: View {
 struct OscarConfirmPickSheet: View {
     let nominee: OscarNominee
     let category: OscarCategory
+    let viewModel: OscarDraftViewModel
     let isSubmitting: Bool
     let onConfirm: () -> Void
     @Environment(\.dismiss) private var dismiss
@@ -852,6 +1112,39 @@ struct OscarConfirmPickSheet: View {
                                 .foregroundColor(FFColors.textSecondary)
                         }
                     }
+
+                    // Odds & stats
+                    HStack(spacing: FFSpacing.lg) {
+                        if let odds = nominee.oddsString {
+                            VStack(spacing: 4) {
+                                Text(odds)
+                                    .font(FFTypography.titleMedium)
+                                    .foregroundColor(FFColors.goldPrimary)
+                                Text("Win Odds")
+                                    .font(FFTypography.caption)
+                                    .foregroundColor(FFColors.textTertiary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, FFSpacing.md)
+                            .background(FFColors.backgroundElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+                        }
+
+                        let rosterPct = viewModel.rosterPercentageString(for: nominee.id, categoryId: category.id)
+                        VStack(spacing: 4) {
+                            Text(rosterPct)
+                                .font(FFTypography.titleMedium)
+                                .foregroundColor(FFColors.textPrimary)
+                            Text("Rostered")
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textTertiary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, FFSpacing.md)
+                        .background(FFColors.backgroundElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+                    }
+                    .padding(.horizontal)
 
                     Spacer()
 
