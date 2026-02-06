@@ -253,7 +253,7 @@ struct OscarOdds: Codable, Identifiable, Hashable, Sendable {
         categoryId: String,
         probability: Double,
         oddsString: String? = nil,
-        source: OddsSource = .kalshi,
+        source: OddsSource = .expertConsensus,
         fetchedAt: Date = Date()
     ) {
         self.nomineeId = nomineeId
@@ -270,6 +270,7 @@ enum OddsSource: String, Codable, Sendable {
     case kalshi = "kalshi"
     case polymarket = "polymarket"
     case goldDerby = "gold_derby"
+    case expertConsensus = "expert_consensus"
     case manual = "manual"
 
     var displayName: String {
@@ -689,9 +690,9 @@ extension OscarNominee {
 
 extension OscarNominee {
 
-    /// Expert consensus odds based on Gold Derby / prediction aggregators
-    /// Updated pre-ceremony - maps nominee name+category to win probability
-    static let expertOdds: [String: Double] = [
+    /// Win probabilities - overwritten at runtime with live Kalshi prediction market data.
+    /// The static values below are fallback estimates used when Kalshi is unavailable.
+    static var expertOdds: [String: Double] = [
         // Best Picture
         "Anora_best_picture": 0.32,
         "The Brutalist_best_picture": 0.22,
