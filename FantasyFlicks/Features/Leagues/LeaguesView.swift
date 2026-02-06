@@ -414,9 +414,12 @@ struct JoinLeagueSheet: View {
 struct LeagueDetailView: View {
     let league: FFLeague
     @StateObject private var draftViewModel = DraftViewModel()
+    @StateObject private var oscarDraftViewModel = OscarDraftViewModel()
     @State private var showDraftRoom = false
+    @State private var showOscarDraftRoom = false
     @State private var showInviteCode = false
     @State private var isStartingDraft = false
+    @State private var createdDraftId: String?
 
     private var isCommissioner: Bool {
         league.commissionerId == AuthenticationService.shared.currentUser?.id
@@ -491,10 +494,23 @@ struct LeagueDetailView: View {
                                 .foregroundColor(FFColors.textPrimary)
 
                             SettingRow(label: "Mode", value: league.settings.leagueMode.displayName)
-                            SettingRow(label: "Scoring", value: league.settings.scoringMode.displayName)
+
+                            if league.isOscarMode {
+                                if let oscarSettings = league.settings.oscarSettings {
+                                    SettingRow(label: "Draft Style", value: oscarSettings.draftStyle.displayName)
+                                    SettingRow(label: "Picks per Player", value: "\(league.settings.moviesPerPlayer)")
+                                    SettingRow(label: "Duplicate Picks", value: oscarSettings.allowDuplicatePicks ? "Allowed" : "Not Allowed")
+                                    SettingRow(label: "Points per Pick", value: String(format: "%.0f", oscarSettings.pointsPerCorrectPick))
+                                } else {
+                                    SettingRow(label: "Picks per Player", value: "\(league.settings.moviesPerPlayer)")
+                                }
+                            } else {
+                                SettingRow(label: "Scoring", value: league.settings.scoringMode.displayName)
+                                SettingRow(label: "Movies per Team", value: "\(league.settings.moviesPerPlayer)")
+                            }
+
                             SettingRow(label: "Draft Type", value: league.settings.draftType.displayName)
-                            SettingRow(label: "Movies per Team", value: "\(league.settings.moviesPerPlayer)")
-                            SettingRow(label: "Pick Timer", value: formatTime(league.settings.pickTimerSeconds))
+                            SettingRow(label: "Pick Timer", value: league.settings.pickTimerSeconds == 0 ? "No Time Limit" : formatTime(league.settings.pickTimerSeconds))
 
                             if league.settings.tradingSettings.enabled {
                                 SettingRow(label: "Trading", value: league.settings.tradingSettings.approvalMode.displayName)
@@ -519,14 +535,21 @@ struct LeagueDetailView: View {
         .navigationTitle("League Details")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showDraftRoom) {
-            if let draftId = league.draftId {
-                DraftRoomView(draftId: draftId, leagueName: league.name)
+            if let draftId = league.draftId ?? createdDraftId {
+                if league.isOscarMode {
+                    OscarDraftView(draftId: draftId, leagueId: league.id, leagueName: league.name)
+                } else {
+                    DraftRoomView(draftId: draftId, leagueName: league.name)
+                }
             }
         }
-        .alert("Error", isPresented: .constant(draftViewModel.error != nil)) {
-            Button("OK") { draftViewModel.error = nil }
+        .alert("Error", isPresented: .constant(draftViewModel.error != nil || oscarDraftViewModel.error != nil)) {
+            Button("OK") {
+                draftViewModel.error = nil
+                oscarDraftViewModel.error = nil
+            }
         } message: {
-            Text(draftViewModel.error ?? "")
+            Text(draftViewModel.error ?? oscarDraftViewModel.error ?? "")
         }
     }
 
@@ -740,11 +763,22 @@ struct LeagueDetailView: View {
     private func startDraft() {
         isStartingDraft = true
         Task {
-            if await draftViewModel.startDraft(leagueId: league.id) != nil {
-                isStartingDraft = false
-                showDraftRoom = true
+            if league.isOscarMode {
+                if let draftId = await oscarDraftViewModel.startOscarDraft(leagueId: league.id) {
+                    createdDraftId = draftId
+                    isStartingDraft = false
+                    showDraftRoom = true
+                } else {
+                    isStartingDraft = false
+                }
             } else {
-                isStartingDraft = false
+                if let draftId = await draftViewModel.startDraft(leagueId: league.id) {
+                    createdDraftId = draftId
+                    isStartingDraft = false
+                    showDraftRoom = true
+                } else {
+                    isStartingDraft = false
+                }
             }
         }
     }

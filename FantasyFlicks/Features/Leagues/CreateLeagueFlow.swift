@@ -467,28 +467,51 @@ struct DraftSettingsStep: View {
                 // Pick Timer
                 SettingSection(title: "Time Per Pick") {
                     VStack(spacing: FFSpacing.md) {
-                        Text(formatTime(settings.pickTimerSeconds))
-                            .font(FFTypography.displaySmall)
-                            .foregroundStyle(FFColors.goldGradient)
-
-                        Slider(
-                            value: Binding(
-                                get: { Double(settings.pickTimerSeconds) },
-                                set: { settings.pickTimerSeconds = Int($0) }
-                            ),
-                            in: 30...600,
-                            step: 30
-                        )
-                        .tint(FFColors.goldPrimary)
-
+                        // No Time Limit Toggle
                         HStack {
-                            Text("30 sec")
-                                .font(FFTypography.caption)
-                                .foregroundColor(FFColors.textTertiary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("No Time Limit")
+                                    .font(FFTypography.labelMedium)
+                                    .foregroundColor(FFColors.textPrimary)
+                                Text("Players can take as long as they want")
+                                    .font(FFTypography.bodySmall)
+                                    .foregroundColor(FFColors.textSecondary)
+                            }
                             Spacer()
-                            Text("10 min")
-                                .font(FFTypography.caption)
-                                .foregroundColor(FFColors.textTertiary)
+                            Toggle("", isOn: Binding(
+                                get: { settings.pickTimerSeconds == 0 },
+                                set: { noLimit in
+                                    settings.pickTimerSeconds = noLimit ? 0 : 300
+                                }
+                            ))
+                            .labelsHidden()
+                            .tint(FFColors.goldPrimary)
+                        }
+
+                        if settings.pickTimerSeconds > 0 {
+                            Text(formatTime(settings.pickTimerSeconds))
+                                .font(FFTypography.displaySmall)
+                                .foregroundStyle(FFColors.goldGradient)
+
+                            Slider(
+                                value: Binding(
+                                    get: { Double(settings.pickTimerSeconds) },
+                                    set: { settings.pickTimerSeconds = Int($0) }
+                                ),
+                                in: 30...600,
+                                step: 30
+                            )
+                            .tint(FFColors.goldPrimary)
+
+                            HStack {
+                                Text("30 sec")
+                                    .font(FFTypography.caption)
+                                    .foregroundColor(FFColors.textTertiary)
+                                Spacer()
+                                Text("10 min")
+                                    .font(FFTypography.caption)
+                                    .foregroundColor(FFColors.textTertiary)
+                            }
                         }
                     }
                     .padding()
@@ -833,7 +856,7 @@ struct ReviewStep: View {
                         SummaryRow(label: "Max League Size", value: "Up to \(settings.maxMembers) members")
                         SummaryRow(label: "Movies Per Player", value: "\(settings.moviesPerPlayer)")
                         SummaryRow(label: "Draft Type", value: settings.draftType.displayName)
-                        SummaryRow(label: "Pick Timer", value: formatTime(settings.pickTimerSeconds))
+                        SummaryRow(label: "Pick Timer", value: settings.pickTimerSeconds == 0 ? "No Time Limit" : formatTime(settings.pickTimerSeconds))
 
                         Divider().background(FFColors.textTertiary.opacity(0.3))
 
