@@ -120,8 +120,8 @@ struct DraftView: View {
                         VStack(alignment: .leading, spacing: FFSpacing.sm) {
                             DraftStep(number: 1, text: "Wait for all league members to join")
                             DraftStep(number: 2, text: "Commissioner starts the draft")
-                            DraftStep(number: 3, text: "Take turns picking movies")
-                            DraftStep(number: 4, text: "Track your movies' performance!")
+                            DraftStep(number: 3, text: "Take turns making your picks")
+                            DraftStep(number: 4, text: "Track your performance!")
                         }
                     }
                 }
@@ -251,7 +251,7 @@ struct DraftView: View {
                 HStack {
                     InfoPill(icon: "person.2.fill", text: "\(draft.memberCount)/\(draft.maxMembers) members")
                     Spacer()
-                    Text("\(draft.moviesPerPlayer) movies each")
+                    Text(draft.isOscarMode ? "\(draft.moviesPerPlayer) picks each" : "\(draft.moviesPerPlayer) movies each")
                         .font(FFTypography.caption)
                         .foregroundColor(FFColors.textTertiary)
                 }
@@ -288,7 +288,7 @@ struct DraftView: View {
                                 Spacer()
 
                                 VStack(alignment: .trailing, spacing: 4) {
-                                    Text("\(draft.moviesPerPlayer) movies")
+                                    Text(draft.isOscarMode ? "\(draft.moviesPerPlayer) picks" : "\(draft.moviesPerPlayer) movies")
                                         .font(FFTypography.labelSmall)
                                         .foregroundColor(FFColors.goldPrimary)
 
