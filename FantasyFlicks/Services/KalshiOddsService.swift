@@ -33,30 +33,39 @@ final class KalshiOddsService {
         var allOdds: [String: Double] = [:]
         var categoriesFetched = 0
 
+        print("[Kalshi] Fetching Oscar odds for \(seriesMapping.count) categories...")
+
         for mapping in seriesMapping {
             do {
                 let markets = try await fetchMarkets(seriesTicker: mapping.seriesTicker)
+                print("[Kalshi] \(mapping.categoryId): \(markets.count) markets found")
+
                 guard !markets.isEmpty else { continue }
 
                 let categoryNominees = nominees.filter { $0.categoryId == mapping.categoryId }
+                var matchCount = 0
 
                 for market in markets {
                     if let nominee = matchNominee(market: market, nominees: categoryNominees) {
                         let probability = effectiveProbability(from: market)
                         if probability > 0 {
                             allOdds["\(nominee.name)_\(mapping.categoryId)"] = probability
+                            matchCount += 1
+                            print("[Kalshi]   ✓ \(nominee.name) = \(Int(probability * 100))%")
                         }
+                    } else {
+                        print("[Kalshi]   ✗ No match for market: \"\(market.title)\"")
                     }
                 }
 
-                if !markets.isEmpty {
-                    categoriesFetched += 1
-                }
+                print("[Kalshi] \(mapping.categoryId): \(matchCount)/\(markets.count) nominees matched")
+                categoriesFetched += 1
             } catch {
-                // Silently skip this category - will use fallback estimates
+                print("[Kalshi] \(mapping.categoryId): ERROR - \(error.localizedDescription)")
             }
         }
 
+        print("[Kalshi] Done. \(allOdds.count) total odds fetched across \(categoriesFetched) categories")
         return (allOdds, categoriesFetched)
     }
 
