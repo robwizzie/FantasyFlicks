@@ -331,7 +331,7 @@ final class OscarDraftViewModel: ObservableObject {
         return result
     }
 
-    /// Get filtered nominees for a specific category
+    /// Get filtered nominees for a specific category, sorted by odds (highest first)
     func filteredNominees(for categoryId: String) -> [OscarNominee] {
         var result = nominees(for: categoryId)
 
@@ -342,6 +342,9 @@ final class OscarDraftViewModel: ObservableObject {
                 ($0.movieTitle?.lowercased().contains(q) ?? false)
             }
         }
+
+        // Sort by odds descending (highest odds first)
+        result.sort { ($0.odds ?? 0) > ($1.odds ?? 0) }
 
         return result
     }
