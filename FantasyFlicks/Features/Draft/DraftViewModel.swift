@@ -272,10 +272,9 @@ final class DraftViewModel: ObservableObject {
             try await db.collection("drafts").document(draft.id)
                 .collection("picks").document(pickId).setData(pickData)
 
-            // Update draft state (next picker, round, etc.)
-            var nextState = calculateNextDraftState(draft: draft)
-            // Track pick count on the draft document for completion detection
-            nextState["pickCount"] = draft.picks.count + 1
+            // Calculate next state including updated pick count
+            let currentPickCount = draft.picks.count
+            var nextState = calculateNextDraftState(draft: draft, currentPickCount: currentPickCount)
             try await db.collection("drafts").document(draft.id).updateData(nextState)
 
             // Update user's total movies drafted
@@ -319,6 +318,7 @@ final class DraftViewModel: ObservableObject {
                 "currentPickInRound": 1,
                 "currentOverallPick": 1,
                 "currentPickerId": draftOrder.first as Any,
+                "pickCount": 0,
                 "createdAt": FieldValue.serverTimestamp(),
                 "startedAt": FieldValue.serverTimestamp()
             ]
@@ -512,15 +512,18 @@ final class DraftViewModel: ObservableObject {
         )
     }
 
-    private func calculateNextDraftState(draft: FFDraft) -> [String: Any] {
+    private func calculateNextDraftState(draft: FFDraft, currentPickCount: Int) -> [String: Any] {
         let totalPlayers = draft.draftOrder.count
+        let nextPickCount = currentPickCount + 1
         let nextOverallPick = draft.currentOverallPick + 1
 
-        // Check if draft is complete
-        if nextOverallPick > draft.totalPicks {
+        // Check if draft is complete (all picks have been made)
+        // Use pickCount instead of currentOverallPick to avoid off-by-one errors
+        if nextPickCount >= draft.totalPicks {
             var completedState: [String: Any] = [
                 "status": DraftStatus.completed.rawValue,
                 "currentOverallPick": nextOverallPick,
+                "pickCount": nextPickCount,
                 "completedAt": FieldValue.serverTimestamp()
             ]
             // Clear the current picker since draft is done
@@ -545,7 +548,8 @@ final class DraftViewModel: ObservableObject {
             "currentRound": nextRound,
             "currentPickInRound": nextPickInRound,
             "currentOverallPick": nextOverallPick,
-            "currentPickerId": nextPickerId
+            "currentPickerId": nextPickerId,
+            "pickCount": nextPickCount
         ]
 
         // Only set timer start if there's a time limit

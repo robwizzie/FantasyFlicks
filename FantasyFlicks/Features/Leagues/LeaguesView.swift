@@ -420,6 +420,7 @@ struct LeagueDetailView: View {
     @State private var showInviteCode = false
     @State private var isStartingDraft = false
     @State private var createdDraftId: String?
+    @State private var showLeagueDashboard = false
 
     private var isCommissioner: Bool {
         league.commissionerId == AuthenticationService.shared.currentUser?.id
@@ -543,6 +544,9 @@ struct LeagueDetailView: View {
                 }
             }
         }
+        .navigationDestination(isPresented: $showLeagueDashboard) {
+            LeagueDashboardView(league: league)
+        }
         .alert("Error", isPresented: .constant(draftViewModel.error != nil || oscarDraftViewModel.error != nil)) {
             Button("OK") {
                 draftViewModel.error = nil
@@ -610,17 +614,23 @@ struct LeagueDetailView: View {
                         .background(FFColors.backgroundElevated)
                         .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
                 } else if league.draftStatus == .completed {
-                    HStack(spacing: FFSpacing.sm) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(FFColors.success)
-                        Text("Draft Complete - Season in Progress")
-                            .font(FFTypography.labelMedium)
-                            .foregroundColor(FFColors.success)
+                    VStack(spacing: FFSpacing.md) {
+                        HStack(spacing: FFSpacing.sm) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(FFColors.success)
+                            Text("Draft Complete - Season in Progress")
+                                .font(FFTypography.labelMedium)
+                                .foregroundColor(FFColors.success)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(FFColors.success.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+
+                        GoldButton(title: "View League Dashboard", icon: "chart.bar.fill", style: .primary, fullWidth: true) {
+                            showLeagueDashboard = true
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(FFColors.success.opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
                 }
             }
         }
@@ -639,21 +649,30 @@ struct LeagueDetailView: View {
     // MARK: - Quick Actions
 
     private var quickActionsSection: some View {
-        HStack(spacing: FFSpacing.md) {
-            QuickActionButton(icon: "person.2.fill", title: "Roster") {
-                // Navigate to roster
+        VStack(spacing: FFSpacing.md) {
+            // Main dashboard button (if draft is complete)
+            if league.draftStatus == .completed {
+                GoldButton(title: "View League Dashboard", icon: "chart.bar.fill", fullWidth: true) {
+                    showLeagueDashboard = true
+                }
             }
 
-            QuickActionButton(icon: "arrow.left.arrow.right", title: "Trades") {
-                // Navigate to trades
-            }
+            HStack(spacing: FFSpacing.md) {
+                QuickActionButton(icon: "person.2.fill", title: "Roster") {
+                    // Navigate to roster
+                }
 
-            QuickActionButton(icon: "chart.line.uptrend.xyaxis", title: "Stats") {
-                // Navigate to stats
-            }
+                QuickActionButton(icon: "arrow.left.arrow.right", title: "Trades") {
+                    // Navigate to trades
+                }
 
-            QuickActionButton(icon: "gearshape.fill", title: "Settings") {
-                // Navigate to settings
+                QuickActionButton(icon: "chart.line.uptrend.xyaxis", title: "Stats") {
+                    showLeagueDashboard = true
+                }
+
+                QuickActionButton(icon: "gearshape.fill", title: "Settings") {
+                    // Navigate to settings
+                }
             }
         }
     }
