@@ -35,6 +35,7 @@ final class OscarDraftViewModel: ObservableObject {
     // MARK: - Poster, Sorting, Favorites & Odds
 
     @Published private(set) var posterPaths: [Int: String] = [:]
+    @Published private(set) var usernames: [String: String] = [:] // userId -> username mapping
     @Published private(set) var hasLiveOdds = false
     @Published private(set) var liveOddsCategories = 0
     /// Number of nominee odds successfully matched from Kalshi (for verification)
@@ -298,6 +299,9 @@ final class OscarDraftViewModel: ObservableObject {
         // Fetch live odds from Kalshi and poster images from TMDB
         await loadKalshiOdds()
         await loadPosterPaths()
+
+        // Fetch usernames for team names
+        await loadUsernames()
     }
 
     // MARK: - Search & Filter
@@ -418,6 +422,28 @@ final class OscarDraftViewModel: ObservableObject {
         posterPaths = paths
     }
 
+    // MARK: - Load Usernames
+
+    /// Fetch usernames for all users in the draft
+    func loadUsernames() async {
+        var names: [String: String] = [:]
+
+        for userId in draftOrder {
+            do {
+                let userDoc = try await db.collection("users").document(userId).getDocument()
+                if let data = userDoc.data(),
+                   let username = data["username"] as? String {
+                    names[userId] = username
+                }
+            } catch {
+                // Use default name if fetch fails
+                names[userId] = "User"
+            }
+        }
+
+        usernames = names
+    }
+
     // MARK: - Submit Pick
 
     func submitOscarPick(categoryId: String, nominee: OscarNominee, draftId: String, leagueId: String) async -> Bool {
@@ -498,6 +524,7 @@ final class OscarDraftViewModel: ObservableObject {
                 "currentPickInRound": 1,
                 "currentOverallPick": 1,
                 "currentPickerId": draftOrder.first as Any,
+                "pickCount": 0,
                 "isOscarDraft": true,
                 "createdAt": FieldValue.serverTimestamp(),
                 "startedAt": FieldValue.serverTimestamp(),
@@ -543,15 +570,17 @@ final class OscarDraftViewModel: ObservableObject {
         let totalPlayers = draftOrder.count
         guard totalPlayers > 0 else { return [:] }
 
+        let nextPickCount = totalPicksMade + 1 // The pick we just made
         let nextOverallPick = totalPicksMade + 2 // +1 for current pick, +1 for next
 
-        // Check if draft is complete
-        if nextOverallPick > totalPicksNeeded {
+        // Check if draft is complete (all picks have been made)
+        // Use pickCount to ensure accurate completion
+        if nextPickCount >= totalPicksNeeded {
             var completedState: [String: Any] = [
                 "status": DraftStatus.completed.rawValue,
                 "currentOverallPick": nextOverallPick,
                 "completedAt": FieldValue.serverTimestamp(),
-                "pickCount": totalPicksMade + 1
+                "pickCount": nextPickCount
             ]
             completedState["currentPickerId"] = NSNull()
             return completedState
@@ -576,7 +605,7 @@ final class OscarDraftViewModel: ObservableObject {
             "currentPickInRound": nextPickInRound,
             "currentOverallPick": nextOverallPick - 1,
             "currentPickerId": nextPickerId,
-            "pickCount": totalPicksMade + 1
+            "pickCount": nextPickCount
         ]
 
         // For category rounds, advance to next category when round changes
@@ -620,10 +649,14 @@ final class OscarDraftViewModel: ObservableObject {
             let correctPicks = userPicks.filter { $0.isCorrect == true }.count
             let totalPoints = userPicks.compactMap { $0.pointsEarned }.reduce(0, +)
 
+            // Use cached username if available, otherwise fallback to userId
+            let username = usernames[userId] ?? "User"
+            let teamName = "Team \(username)"
+
             newStandings.append(OscarStanding(
                 teamId: userId,
                 userId: userId,
-                teamName: "Team \(userId.prefix(6))",
+                teamName: teamName,
                 rank: 0,
                 correctPicks: correctPicks,
                 totalPicks: userPicks.count,

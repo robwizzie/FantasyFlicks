@@ -14,6 +14,7 @@ struct HomeView: View {
     @State private var animateHero = false
     @State private var scrollOffset: CGFloat = 0
     @State private var selectedMovie: FFMovie?
+    @State private var showDraftRoom = false
 
     // User leagues from Firebase
     private var activeLeagues: [FFLeague] { viewModel.userLeagues }
@@ -91,6 +92,22 @@ struct HomeView: View {
             .sheet(item: $selectedMovie) { movie in
                 NavigationStack {
                     MovieDetailView(movie: movie)
+                }
+            }
+            .navigationDestination(isPresented: $showDraftRoom) {
+                if let activeDraft = viewModel.activeDraft {
+                    if activeDraft.isOscarMode {
+                        OscarDraftView(
+                            draftId: activeDraft.draftId,
+                            leagueId: activeDraft.leagueId,
+                            leagueName: activeDraft.leagueName
+                        )
+                    } else {
+                        DraftRoomView(
+                            draftId: activeDraft.draftId,
+                            leagueName: activeDraft.leagueName
+                        )
+                    }
                 }
             }
             .task {
@@ -222,7 +239,7 @@ struct HomeView: View {
         Group {
             if let activeDraft = viewModel.activeDraft {
                 Button {
-                    // Navigate to draft
+                    showDraftRoom = true
                 } label: {
                     HStack(spacing: FFSpacing.md) {
                         // Live indicator

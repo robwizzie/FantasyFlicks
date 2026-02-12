@@ -41,6 +41,8 @@ final class HomeViewModel: ObservableObject {
     struct ActiveDraftInfo {
         let leagueId: String
         let leagueName: String
+        let draftId: String
+        let isOscarMode: Bool
         let isYourTurn: Bool
         let currentRound: Int
         let currentPick: Int
@@ -79,10 +81,13 @@ final class HomeViewModel: ObservableObject {
                     }
 
                     // Check for active drafts
-                    if let activeDraftLeague = self.userLeagues.first(where: { $0.draftStatus == .inProgress }) {
+                    if let activeDraftLeague = self.userLeagues.first(where: { $0.draftStatus == .inProgress }),
+                       let draftId = activeDraftLeague.draftId {
                         self.activeDraft = ActiveDraftInfo(
                             leagueId: activeDraftLeague.id,
                             leagueName: activeDraftLeague.name,
+                            draftId: draftId,
+                            isOscarMode: activeDraftLeague.isOscarMode,
                             isYourTurn: false, // Would need draft data to determine
                             currentRound: 1,
                             currentPick: 1
@@ -121,20 +126,8 @@ final class HomeViewModel: ObservableObject {
         totalMoviesDrafted = user.totalMoviesDrafted
         leaguesWon = user.leaguesWon
 
-        // Calculate best rank if we have leagues won
-        if user.leaguesWon > 0 {
-            bestRank = 1 // If they've won, their best rank is #1
-        } else if user.totalLeagues > 0 {
-            // Estimate based on ranking points (higher points = better rank)
-            let pointsPerLeague = user.rankingPoints / max(1, user.totalLeagues)
-            if pointsPerLeague > 500 {
-                bestRank = 2
-            } else if pointsPerLeague > 200 {
-                bestRank = 3
-            } else {
-                bestRank = 4
-            }
-        }
+        // Fetch best rank from actual league standings
+        await fetchBestRank(userId: user.id)
 
         // Also try to fetch fresh data from Firestore
         do {
@@ -146,6 +139,53 @@ final class HomeViewModel: ObservableObject {
             }
         } catch {
             // Use cached values if fetch fails
+        }
+    }
+
+    /// Fetch best rank from all leagues the user is in
+    private func fetchBestRank(userId: String) async {
+        do {
+            // Get all leagues the user is a member of
+            let leaguesSnapshot = try await db.collection("leagues")
+                .whereField("memberIds", arrayContains: userId)
+                .whereField("draftStatus", isEqualTo: DraftStatus.completed.rawValue)
+                .getDocuments()
+
+            var bestFoundRank = 0
+
+            for leagueDoc in leaguesSnapshot.documents {
+                guard let draftId = leagueDoc.data()["draftId"] as? String else { continue }
+
+                // Get all picks for this draft
+                let picksSnapshot = try await db.collection("drafts").document(draftId)
+                    .collection("picks")
+                    .getDocuments()
+
+                // Group picks by user and calculate scores
+                var userScores: [(userId: String, score: Double)] = []
+                let picksByUser = Dictionary(grouping: picksSnapshot.documents, by: { $0.data()["userId"] as? String ?? "" })
+
+                for (pickUserId, userPicks) in picksByUser {
+                    let score = userPicks.compactMap { $0.data()["pointsEarned"] as? Double }.reduce(0, +)
+                    userScores.append((userId: pickUserId, score: score))
+                }
+
+                // Sort by score
+                userScores.sort { $0.score > $1.score }
+
+                // Find this user's rank
+                if let userIndex = userScores.firstIndex(where: { $0.userId == userId }) {
+                    let rank = userIndex + 1
+                    if bestFoundRank == 0 || rank < bestFoundRank {
+                        bestFoundRank = rank
+                    }
+                }
+            }
+
+            bestRank = bestFoundRank
+
+        } catch {
+            // If fetch fails, keep existing value
         }
     }
 
