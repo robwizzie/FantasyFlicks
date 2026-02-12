@@ -574,11 +574,11 @@ final class OscarDraftViewModel: ObservableObject {
         let nextOverallPick = totalPicksMade + 2 // +1 for current pick, +1 for next
 
         // Check if draft is complete (all picks have been made)
-        // Use pickCount to ensure accurate completion
-        if nextPickCount >= totalPicksNeeded {
+        // Draft completes when the next pick would exceed total picks needed
+        if nextOverallPick > totalPicksNeeded {
             var completedState: [String: Any] = [
                 "status": DraftStatus.completed.rawValue,
-                "currentOverallPick": nextOverallPick,
+                "currentOverallPick": nextPickCount,
                 "completedAt": FieldValue.serverTimestamp(),
                 "pickCount": nextPickCount
             ]

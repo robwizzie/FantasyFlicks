@@ -19,6 +19,7 @@ struct OscarDraftView: View {
     @State private var selectedNominee: OscarNominee?
     @State private var selectedCategory: OscarCategory?
     @State private var showSearch = false
+    @State private var hasShownCompletionScreen = false
     @Environment(\.dismiss) private var dismiss
 
     enum OscarDraftTab: String, CaseIterable {
@@ -100,6 +101,16 @@ struct OscarDraftView: View {
             Button("OK") { viewModel.error = nil }
         } message: {
             Text(viewModel.error ?? "")
+        }
+        .onChange(of: viewModel.isDraftComplete) { _, isComplete in
+            if isComplete && !hasShownCompletionScreen {
+                hasShownCompletionScreen = true
+                // Auto-dismiss after 3 seconds to show completion screen, then return to league
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    dismiss()
+                }
+            }
         }
     }
 
