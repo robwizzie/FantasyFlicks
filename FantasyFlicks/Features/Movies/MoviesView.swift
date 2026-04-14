@@ -13,7 +13,7 @@ struct MoviesView: View {
     @State private var showFilters = false
     @State private var selectedMovie: FFMovie?
 
-    private let years = Array((2024...2027).reversed())
+    private let years = Array((1970...2027).reversed())
     private let genres = [
         (28, "Action"),
         (12, "Adventure"),

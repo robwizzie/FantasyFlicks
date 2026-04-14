@@ -27,6 +27,9 @@ final class NavigationCoordinator: ObservableObject {
     /// Whether to show join league sheet
     @Published var showJoinLeague = false
 
+    /// Whether to show Movie Night flow
+    @Published var showMovieNight = false
+
     // MARK: - Initialization
 
     private init() {}
@@ -56,6 +59,11 @@ final class NavigationCoordinator: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             self.showJoinLeague = true
         }
+    }
+
+    /// Show Movie Night flow
+    func showMovieNightFlow() {
+        showMovieNight = true
     }
 }
 

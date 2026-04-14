@@ -36,14 +36,11 @@ struct HomeView: View {
                         // Hero section with logo
                         heroSection
 
-                        // Active draft alert (if any)
-                        activeDraftBanner
+                        // Movie Night hero CTA
+                        movieNightHeroSection
 
-                        // Quick actions
+                        // Other modes (Coming Soon)
                         quickActionsSection
-
-                        // Your leagues
-                        yourLeaguesSection
 
                         // Upcoming movies carousel (real data)
                         upcomingMoviesSection
@@ -290,39 +287,91 @@ struct HomeView: View {
         }
     }
 
+    // MARK: - Movie Night Hero
+
+    private var movieNightHeroSection: some View {
+        VStack(spacing: FFSpacing.lg) {
+            Button {
+                navigationCoordinator.showMovieNightFlow()
+            } label: {
+                VStack(spacing: FFSpacing.lg) {
+                    Image(systemName: "popcorn.fill")
+                        .font(.system(size: 48))
+                        .foregroundStyle(FFColors.goldGradient)
+                        .shadow(color: FFColors.goldPrimary.opacity(0.4), radius: 16, x: 0, y: 0)
+
+                    VStack(spacing: FFSpacing.sm) {
+                        Text("Movie Night")
+                            .font(FFTypography.headlineLarge)
+                            .foregroundColor(FFColors.textPrimary)
+
+                        Text("Swipe to find your next watch")
+                            .font(FFTypography.bodyMedium)
+                            .foregroundColor(FFColors.textSecondary)
+                    }
+
+                    HStack(spacing: FFSpacing.sm) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 14, weight: .bold))
+                        Text("Start Movie Night")
+                            .font(FFTypography.labelLarge)
+                    }
+                    .foregroundColor(FFColors.backgroundDark)
+                    .padding(.horizontal, FFSpacing.xxl)
+                    .padding(.vertical, FFSpacing.md)
+                    .background(FFColors.goldGradient)
+                    .clipShape(Capsule())
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, FFSpacing.xxl)
+                .background {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.xxl)
+                        .fill(FFColors.backgroundElevated.opacity(0.6))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: FFCornerRadius.xxl)
+                                .stroke(FFColors.goldPrimary.opacity(0.3), lineWidth: 1)
+                        }
+                }
+            }
+            .buttonStyle(.plain)
+            .pressEffect()
+            .padding(.horizontal)
+        }
+    }
+
     // MARK: - Quick Actions
 
     private var quickActionsSection: some View {
         VStack(alignment: .leading, spacing: FFSpacing.md) {
-            Text("Quick Actions")
+            Text("More Modes")
                 .font(FFTypography.headlineSmall)
                 .foregroundColor(FFColors.textPrimary)
                 .padding(.horizontal)
 
-            HStack(spacing: FFSpacing.md) {
-                QuickActionCard(
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: FFSpacing.md) {
+                ComingSoonCard(
                     icon: "plus.circle.fill",
                     title: "Create League",
                     color: FFColors.goldPrimary
-                ) {
-                    navigationCoordinator.showCreateLeagueFlow()
-                }
+                )
 
-                QuickActionCard(
+                ComingSoonCard(
                     icon: "person.badge.plus",
                     title: "Join League",
                     color: FFColors.goldLight
-                ) {
-                    navigationCoordinator.showJoinLeagueFlow()
-                }
+                )
 
-                QuickActionCard(
+                ComingSoonCard(
+                    icon: "list.clipboard.fill",
+                    title: "Fantasy Draft",
+                    color: FFColors.ruby
+                )
+
+                ComingSoonCard(
                     icon: "magnifyingglass",
                     title: "Browse Movies",
-                    color: FFColors.ruby
-                ) {
-                    navigationCoordinator.navigateTo(.movies)
-                }
+                    color: FFColors.goldDark
+                )
             }
             .padding(.horizontal)
         }
@@ -535,6 +584,54 @@ struct QuickActionCard: View {
         }
         .buttonStyle(.plain)
         .pressEffect()
+    }
+}
+
+// MARK: - Coming Soon Card
+
+struct ComingSoonCard: View {
+    let icon: String
+    let title: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: FFSpacing.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                    .fill(color.opacity(0.08))
+                    .frame(width: 48, height: 48)
+
+                Image(systemName: icon)
+                    .font(.system(size: 22))
+                    .foregroundColor(color.opacity(0.4))
+            }
+
+            VStack(spacing: 4) {
+                Text(title)
+                    .font(FFTypography.labelSmall)
+                    .foregroundColor(FFColors.textTertiary)
+                    .lineLimit(1)
+
+                Text("Coming Soon")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(FFColors.goldPrimary.opacity(0.6))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(FFColors.goldPrimary.opacity(0.1))
+                    .clipShape(Capsule())
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, FFSpacing.lg)
+        .background {
+            RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                .fill(FFColors.backgroundElevated.opacity(0.3))
+                .overlay {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 0.5)
+                }
+        }
+        .opacity(0.6)
     }
 }
 

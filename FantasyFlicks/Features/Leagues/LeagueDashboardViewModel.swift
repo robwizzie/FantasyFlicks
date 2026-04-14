@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import Combine
 import FirebaseFirestore
 
 // MARK: - League Standing Model
@@ -155,9 +156,9 @@ final class LeagueDashboardViewModel: ObservableObject {
             var newStandings: [LeagueStanding] = []
 
             for (userId, userPicks) in picksByUser {
-                let correctCount = userPicks.filter { ($0.data()["isCorrect"] as? Bool) == true }.count
+                let correctCount = userPicks.filter { ($0.data()?["isCorrect"] as? Bool) == true }.count
                 let totalCount = userPicks.count
-                let points = userPicks.compactMap { $0.data()["pointsEarned"] as? Double }.reduce(0, +)
+                let points = userPicks.compactMap { $0.data()?["pointsEarned"] as? Double }.reduce(0, +)
 
                 let username = usernames[userId] ?? "User"
                 let teamName = "Team \(username)"

@@ -156,6 +156,113 @@ final class TMDBService {
         )
     }
 
+    // MARK: - Movie Night Methods
+
+    /// Fetch trending movies
+    func getTrendingMovies(timeWindow: String = "week", page: Int = 1) async throws -> TMDBMovieListResponse {
+        guard let url = TMDBEndpoint.trending(timeWindow: timeWindow, page: page).url() else {
+            throw NetworkError.invalidURL
+        }
+        return try await networkManager.get(url: url)
+    }
+
+    /// Fetch watch providers for a movie
+    func getWatchProviders(movieId: Int) async throws -> TMDBWatchProvidersResponse {
+        guard let url = TMDBEndpoint.watchProviders(movieId: movieId).url() else {
+            throw NetworkError.invalidURL
+        }
+        return try await networkManager.get(url: url)
+    }
+
+    /// Discover movies for Movie Night with streaming provider and genre filters
+    func discoverForMovieNight(filters: MovieNightFilters, page: Int = 1) async throws -> TMDBMovieListResponse {
+        guard let url = TMDBEndpoint.discoverForMovieNight(
+            providerIds: filters.watchProviderIds,
+            region: filters.watchRegion,
+            genreIds: filters.genreIds,
+            minVote: filters.minVoteAverage,
+            page: page
+        ).url() else {
+            throw NetworkError.invalidURL
+        }
+        return try await networkManager.get(url: url)
+    }
+
+    /// Discover top-rated classic movies (sorted by vote average, high vote count)
+    func discoverClassics(filters: MovieNightFilters, page: Int = 1) async throws -> TMDBMovieListResponse {
+        guard let url = TMDBEndpoint.discoverClassics(
+            providerIds: filters.watchProviderIds,
+            region: filters.watchRegion,
+            genreIds: filters.genreIds,
+            minVote: filters.minVoteAverage,
+            page: page
+        ).url() else {
+            throw NetworkError.invalidURL
+        }
+        return try await networkManager.get(url: url)
+    }
+
+    /// Build a Movie Night deck from TMDB based on filters
+    func buildMovieNightDeck(filters: MovieNightFilters, excludeTmdbIds: Set<Int> = []) async throws -> [FFMovie] {
+        var allMovies: [TMDBMovie] = []
+        var seenIds = excludeTmdbIds
+        let targetSize = filters.deckSize
+
+        // 1. Fetch popular recent movies (popularity sort)
+        let popularPages = max(2, Int(ceil(Double(targetSize) / 20.0)))
+        for page in 1...popularPages {
+            guard allMovies.count < targetSize else { break }
+            let response = try await discoverForMovieNight(filters: filters, page: page)
+            let filtered = response.results.filter { !seenIds.contains($0.id) }
+            for movie in filtered { seenIds.insert(movie.id) }
+            allMovies.append(contentsOf: filtered)
+            if response.totalPages <= page { break }
+        }
+
+        // 2. Fetch top-rated classics (vote_average sort — includes older films)
+        let classicPages = max(2, Int(ceil(Double(targetSize) / 20.0)))
+        for page in 1...classicPages {
+            guard allMovies.count < targetSize * 2 else { break }
+            let response = try await discoverClassics(filters: filters, page: page)
+            let filtered = response.results.filter { !seenIds.contains($0.id) }
+            for movie in filtered { seenIds.insert(movie.id) }
+            allMovies.append(contentsOf: filtered)
+            if response.totalPages <= page { break }
+        }
+
+        // 3. If trending is enabled, add trending too
+        if filters.includeTrending {
+            for page in 1...2 {
+                let trendingResponse = try await getTrendingMovies(timeWindow: "week", page: page)
+                let trendingFiltered = trendingResponse.results.filter { movie in
+                    (movie.voteAverage ?? 0) >= filters.minVoteAverage &&
+                    !seenIds.contains(movie.id)
+                }
+                for movie in trendingFiltered { seenIds.insert(movie.id) }
+                allMovies.append(contentsOf: trendingFiltered)
+            }
+        }
+
+        // 4. If now playing is enabled
+        if filters.includeNowPlaying {
+            let nowPlayingResponse = try await getNowPlayingMovies(page: 1)
+            let nowPlayingFiltered = nowPlayingResponse.results.filter { movie in
+                (movie.voteAverage ?? 0) >= filters.minVoteAverage &&
+                !seenIds.contains(movie.id)
+            }
+            allMovies.append(contentsOf: nowPlayingFiltered)
+        }
+
+        // Deduplicate, shuffle for variety, then trim to deck size
+        var dedupe = Set<Int>()
+        var uniqueMovies = allMovies.filter { dedupe.insert($0.id).inserted }
+        uniqueMovies.shuffle()
+        let deckMovies = Array(uniqueMovies.prefix(targetSize))
+
+        // Convert to FFMovie
+        return deckMovies.map { convertToFFMovie($0) }
+    }
+
     /// Fetch full movie with details and credits
     func getFullMovie(id: Int) async throws -> FFMovie {
         async let detailsTask = getMovieDetails(id: id)
@@ -289,6 +396,27 @@ struct TMDBVideo: Codable, Sendable {
 
 struct TMDBGenresResponse: Codable, Sendable {
     let genres: [TMDBGenre]
+}
+
+// MARK: - Watch Providers Response
+
+struct TMDBWatchProvidersResponse: Codable, Sendable {
+    let id: Int
+    let results: [String: TMDBWatchProviderRegion]
+}
+
+struct TMDBWatchProviderRegion: Codable, Sendable {
+    let link: String?
+    let flatrate: [TMDBWatchProviderEntry]?
+    let rent: [TMDBWatchProviderEntry]?
+    let buy: [TMDBWatchProviderEntry]?
+}
+
+struct TMDBWatchProviderEntry: Codable, Sendable {
+    let providerId: Int
+    let providerName: String
+    let logoPath: String?
+    let displayPriority: Int?
 }
 
 struct TMDBReleaseDatesResponse: Codable, Sendable {

@@ -104,10 +104,14 @@ enum TMDBEndpoint: Sendable {
     case search(query: String, page: Int)
     case genres
     case configuration
+    case trending(timeWindow: String, page: Int)
+    case watchProviders(movieId: Int)
+    case discoverForMovieNight(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int)
+    case discoverClassics(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int)
 
     var path: String {
         switch self {
-        case .discover, .discoverUpcomingBlockbusters: return "/discover/movie"
+        case .discover, .discoverUpcomingBlockbusters, .discoverForMovieNight, .discoverClassics: return "/discover/movie"
         case .upcoming: return "/movie/upcoming"
         case .nowPlaying: return "/movie/now_playing"
         case .movieDetails(let id): return "/movie/\(id)"
@@ -117,6 +121,8 @@ enum TMDBEndpoint: Sendable {
         case .search: return "/search/movie"
         case .genres: return "/genre/movie/list"
         case .configuration: return "/configuration"
+        case .trending(let timeWindow, _): return "/trending/movie/\(timeWindow)"
+        case .watchProviders(let movieId): return "/movie/\(movieId)/watch/providers"
         }
     }
 
@@ -153,6 +159,42 @@ enum TMDBEndpoint: Sendable {
                 URLQueryItem(name: "page", value: "\(page)"),
                 URLQueryItem(name: "include_adult", value: "false")
             ])
+        case .trending(_, let page):
+            items.append(URLQueryItem(name: "page", value: "\(page)"))
+        case .discoverForMovieNight(let providerIds, let region, let genreIds, let minVote, let page):
+            items.append(contentsOf: [
+                URLQueryItem(name: "page", value: "\(page)"),
+                URLQueryItem(name: "sort_by", value: "popularity.desc"),
+                URLQueryItem(name: "vote_average.gte", value: String(format: "%.1f", minVote)),
+                URLQueryItem(name: "vote_count.gte", value: "50"),
+                URLQueryItem(name: "with_original_language", value: "en"),
+                URLQueryItem(name: "include_adult", value: "false")
+            ])
+            if !providerIds.isEmpty {
+                items.append(URLQueryItem(name: "with_watch_providers", value: providerIds.map { "\($0)" }.joined(separator: "|")))
+                items.append(URLQueryItem(name: "watch_region", value: region))
+                items.append(URLQueryItem(name: "with_watch_monetization_types", value: "flatrate"))
+            }
+            if !genreIds.isEmpty {
+                items.append(URLQueryItem(name: "with_genres", value: genreIds.map { "\($0)" }.joined(separator: ",")))
+            }
+        case .discoverClassics(let providerIds, let region, let genreIds, let minVote, let page):
+            items.append(contentsOf: [
+                URLQueryItem(name: "page", value: "\(page)"),
+                URLQueryItem(name: "sort_by", value: "vote_average.desc"),
+                URLQueryItem(name: "vote_average.gte", value: String(format: "%.1f", minVote)),
+                URLQueryItem(name: "vote_count.gte", value: "300"),
+                URLQueryItem(name: "with_original_language", value: "en"),
+                URLQueryItem(name: "include_adult", value: "false")
+            ])
+            if !providerIds.isEmpty {
+                items.append(URLQueryItem(name: "with_watch_providers", value: providerIds.map { "\($0)" }.joined(separator: "|")))
+                items.append(URLQueryItem(name: "watch_region", value: region))
+                items.append(URLQueryItem(name: "with_watch_monetization_types", value: "flatrate"))
+            }
+            if !genreIds.isEmpty {
+                items.append(URLQueryItem(name: "with_genres", value: genreIds.map { "\($0)" }.joined(separator: ",")))
+            }
         default:
             break
         }

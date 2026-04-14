@@ -6,11 +6,14 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ProfileView: View {
     @StateObject private var viewModel = ProfileViewModel()
+    @StateObject private var seenMoviesService = SeenMoviesService.shared
     @State private var showSettings = false
     @State private var showEditProfile = false
+    @State private var showWatchedMovies = false
 
     var body: some View {
         NavigationStack {
@@ -25,6 +28,9 @@ struct ProfileView: View {
 
                             // Stats
                             statsSection(user: user)
+
+                            // Watched Movies
+                            watchedMoviesSection
 
                             // Achievements
                             achievementsSection
@@ -72,6 +78,9 @@ struct ProfileView: View {
                 if let user = viewModel.user {
                     EditProfileSheet(viewModel: viewModel, user: user)
                 }
+            }
+            .sheet(isPresented: $showWatchedMovies) {
+                WatchedMoviesSheet()
             }
             .alert("Error", isPresented: .constant(viewModel.error != nil)) {
                 Button("OK") { viewModel.clearMessages() }
@@ -241,6 +250,56 @@ struct ProfileView: View {
         }
     }
 
+    private var watchedMoviesSection: some View {
+        VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack {
+                Text("Watched Movies")
+                    .font(FFTypography.headlineSmall)
+                    .foregroundColor(FFColors.textPrimary)
+
+                Spacer()
+
+                Button {
+                    showWatchedMovies = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Manage")
+                            .font(FFTypography.labelSmall)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundColor(FFColors.goldPrimary)
+                }
+            }
+            .padding(.horizontal)
+
+            GlassCard {
+                HStack(spacing: FFSpacing.md) {
+                    Image(systemName: "eye.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(FFColors.goldPrimary)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(seenMoviesService.count) movies tracked")
+                            .font(FFTypography.titleSmall)
+                            .foregroundColor(FFColors.textPrimary)
+                        Text("Used in Movie Night to skip films you've seen")
+                            .font(FFTypography.caption)
+                            .foregroundColor(FFColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(FFColors.textTertiary)
+                }
+            }
+            .padding(.horizontal)
+            .onTapGesture { showWatchedMovies = true }
+        }
+    }
+
     private var settingsSection: some View {
         VStack(spacing: FFSpacing.sm) {
             SettingsRow(icon: "bell.fill", title: "Notifications")
@@ -249,6 +308,273 @@ struct ProfileView: View {
             SettingsRow(icon: "info.circle.fill", title: "About")
         }
         .padding(.horizontal)
+    }
+}
+
+// MARK: - Watched Movies Sheet
+
+struct WatchedMoviesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var seenMoviesService = SeenMoviesService.shared
+    @State private var showLetterboxdImporter = false
+    @State private var searchText = ""
+    @State private var searchResults: [FFMovie] = []
+    @State private var isSearching = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                FFColors.backgroundDark.ignoresSafeArea()
+
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: FFSpacing.xl) {
+                        // Stats
+                        GlassCard(goldTint: true) {
+                            HStack(spacing: FFSpacing.md) {
+                                Image(systemName: "eye.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(FFColors.goldPrimary)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("\(seenMoviesService.count)")
+                                        .font(FFTypography.statMedium)
+                                        .foregroundColor(FFColors.textPrimary)
+                                    Text("movies marked as watched")
+                                        .font(FFTypography.bodySmall)
+                                        .foregroundColor(FFColors.textSecondary)
+                                }
+
+                                Spacer()
+                            }
+                        }
+                        .padding(.horizontal)
+
+                        // Letterboxd import
+                        GlassCard {
+                            VStack(spacing: FFSpacing.lg) {
+                                HStack(spacing: FFSpacing.md) {
+                                    Image(systemName: "square.and.arrow.down.fill")
+                                        .font(.system(size: 24))
+                                        .foregroundColor(FFColors.goldPrimary)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Import from Letterboxd")
+                                            .font(FFTypography.titleSmall)
+                                            .foregroundColor(FFColors.textPrimary)
+                                        Text("Upload your watched.csv or diary.csv")
+                                            .font(FFTypography.caption)
+                                            .foregroundColor(FFColors.textTertiary)
+                                    }
+                                    Spacer()
+                                }
+
+                                GoldButton(
+                                    title: seenMoviesService.isImporting ? "Importing..." : "Choose CSV File",
+                                    icon: "doc.fill",
+                                    style: .secondary,
+                                    size: .medium,
+                                    isLoading: seenMoviesService.isImporting,
+                                    fullWidth: true
+                                ) {
+                                    showLetterboxdImporter = true
+                                }
+                                .disabled(seenMoviesService.isImporting)
+
+                                if let count = seenMoviesService.lastImportCount {
+                                    HStack(spacing: FFSpacing.sm) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(FFColors.success)
+                                        Text("Imported \(count) movies")
+                                            .font(FFTypography.labelMedium)
+                                            .foregroundColor(FFColors.success)
+                                    }
+                                }
+
+                                VStack(alignment: .leading, spacing: FFSpacing.xs) {
+                                    Text("How to export from Letterboxd:")
+                                        .font(FFTypography.labelSmall)
+                                        .foregroundColor(FFColors.textSecondary)
+                                    Text("1. Go to letterboxd.com/settings/data")
+                                    Text("2. Click \"Export Your Data\"")
+                                    Text("3. Upload the watched.csv file")
+                                }
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textTertiary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(.horizontal)
+
+                        // Search to add movies
+                        VStack(alignment: .leading, spacing: FFSpacing.md) {
+                            Text("Search & Add Movies")
+                                .font(FFTypography.headlineSmall)
+                                .foregroundColor(FFColors.textPrimary)
+                                .padding(.horizontal)
+
+                            HStack(spacing: FFSpacing.sm) {
+                                Image(systemName: "magnifyingglass")
+                                    .foregroundColor(FFColors.textTertiary)
+
+                                TextField("Search for a movie...", text: $searchText)
+                                    .font(FFTypography.bodyMedium)
+                                    .foregroundColor(FFColors.textPrimary)
+                                    .textInputAutocapitalization(.words)
+                                    .onSubmit { Task { await search() } }
+
+                                if isSearching {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                        .tint(FFColors.goldPrimary)
+                                }
+                            }
+                            .padding(FFSpacing.md)
+                            .background(FFColors.backgroundElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+                            .padding(.horizontal)
+
+                            if !searchResults.isEmpty {
+                                VStack(spacing: FFSpacing.xs) {
+                                    ForEach(searchResults) { movie in
+                                        searchResultRow(movie: movie)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Clear all
+                        if seenMoviesService.count > 0 {
+                            Button {
+                                seenMoviesService.seenTmdbIds.removeAll()
+                                UserDefaults.standard.removeObject(forKey: "ff_seen_movie_tmdb_ids")
+                            } label: {
+                                Text("Clear All Watched Movies")
+                                    .font(FFTypography.labelMedium)
+                                    .foregroundColor(FFColors.ruby)
+                            }
+                            .padding(.top, FFSpacing.lg)
+                        }
+
+                        Spacer(minLength: 100)
+                    }
+                    .padding(.top, FFSpacing.md)
+                }
+            }
+            .navigationTitle("Watched Movies")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundColor(FFColors.goldPrimary)
+                }
+            }
+            .fileImporter(
+                isPresented: $showLetterboxdImporter,
+                allowedContentTypes: [.commaSeparatedText, .plainText],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    Task { _ = await seenMoviesService.importLetterboxd(from: url) }
+                case .failure:
+                    break
+                }
+            }
+            .onChange(of: searchText) { _, newValue in
+                if newValue.count >= 2 {
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(400))
+                        guard searchText == newValue else { return }
+                        await search()
+                    }
+                } else {
+                    searchResults = []
+                }
+            }
+        }
+    }
+
+    private func searchResultRow(movie: FFMovie) -> some View {
+        let isSeen = seenMoviesService.isSeen(tmdbId: movie.tmdbId)
+
+        return HStack(spacing: FFSpacing.md) {
+            if let posterURL = movie.posterURL {
+                CachedAsyncImage(url: posterURL) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    FFColors.backgroundElevated
+                }
+                .frame(width: 40, height: 60)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(movie.title)
+                    .font(FFTypography.labelMedium)
+                    .foregroundColor(FFColors.textPrimary)
+                    .lineLimit(1)
+
+                HStack(spacing: FFSpacing.sm) {
+                    if let year = movie.year {
+                        Text(String(year))
+                            .font(FFTypography.caption)
+                            .foregroundColor(FFColors.textTertiary)
+                    }
+                    if movie.voteAverage > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(FFColors.goldPrimary)
+                            Text(String(format: "%.1f", movie.voteAverage))
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textTertiary)
+                        }
+                    }
+                }
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 4) {
+                Button {
+                    seenMoviesService.toggleSeen(tmdbId: movie.tmdbId)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: isSeen ? "eye.fill" : "eye")
+                            .font(.system(size: 12))
+                        Text(isSeen ? "Watched" : "Mark Seen")
+                            .font(FFTypography.labelSmall)
+                    }
+                    .foregroundColor(isSeen ? FFColors.goldPrimary : FFColors.textSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(isSeen ? FFColors.goldPrimary.opacity(0.15) : FFColors.backgroundElevated)
+                    .clipShape(Capsule())
+                    .overlay {
+                        Capsule()
+                            .stroke(isSeen ? FFColors.goldPrimary.opacity(0.4) : Color.white.opacity(0.1), lineWidth: 1)
+                    }
+                }
+
+                if isSeen {
+                    StarRatingView(tmdbId: movie.tmdbId, compact: true)
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, FFSpacing.xs)
+    }
+
+    private func search() async {
+        guard !searchText.isEmpty else { return }
+        isSearching = true
+        do {
+            let response = try await TMDBService.shared.searchMovies(query: searchText)
+            searchResults = response.results.prefix(10).map { TMDBService.shared.convertToFFMovie($0) }
+        } catch {
+            searchResults = []
+        }
+        isSearching = false
     }
 }
 

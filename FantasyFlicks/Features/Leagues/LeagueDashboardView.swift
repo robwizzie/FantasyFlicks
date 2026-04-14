@@ -108,7 +108,7 @@ struct LeagueDashboardView: View {
                     standingsHeader
 
                     ForEach(Array(viewModel.standings.enumerated()), id: \.element.id) { index, standing in
-                        StandingRow(standing: standing, index: index, isOscarMode: league.isOscarMode)
+                        DashboardStandingRow(standing: standing, index: index, isOscarMode: league.isOscarMode)
                     }
                 }
             }
@@ -258,7 +258,7 @@ struct TabButton: View {
 
 // MARK: - Standing Row
 
-struct StandingRow: View {
+struct DashboardStandingRow: View {
     let standing: LeagueStanding
     let index: Int
     let isOscarMode: Bool

@@ -45,6 +45,9 @@ struct MainTabView: View {
         }
         .tint(FFColors.goldPrimary)
         .environment(\.navigationCoordinator, navigationCoordinator)
+        .sheet(isPresented: $navigationCoordinator.showMovieNight) {
+            MovieNightEntryView()
+        }
     }
 }
 
