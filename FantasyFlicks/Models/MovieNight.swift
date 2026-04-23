@@ -19,6 +19,7 @@ struct MovieNightSession: Codable, Identifiable, Hashable, Sendable {
     var deckTmdbIds: [Int]
     var filters: MovieNightFilters
     var participantNames: [String: String] // userId -> displayName
+    var participantSeenIds: [String: [Int]]? // userId -> their seen tmdb IDs (for party-wide exclusion)
     var createdAt: Date
     var completedAt: Date?
 
@@ -28,6 +29,12 @@ struct MovieNightSession: Codable, Identifiable, Hashable, Sendable {
     }
 
     var participantCount: Int { participantIds.count }
+
+    /// Union of all participants' seen movie IDs
+    var allParticipantsSeenIds: Set<Int> {
+        guard let participantSeenIds else { return [] }
+        return Set(participantSeenIds.values.flatMap { $0 })
+    }
 
     /// Generate a random 6-character invite code
     static func generateInviteCode() -> String {
@@ -63,6 +70,22 @@ enum MovieNightStatus: String, Codable, Sendable, CaseIterable {
     }
 }
 
+// MARK: - Exclude Seen Mode
+
+enum ExcludeSeenMode: String, Codable, Sendable, CaseIterable, Hashable {
+    case none = "none"
+    case mineOnly = "mineOnly"
+    case everyoneInParty = "everyoneInParty"
+
+    var displayName: String {
+        switch self {
+        case .none: return "Include All"
+        case .mineOnly: return "Exclude Mine"
+        case .everyoneInParty: return "Exclude Everyone's"
+        }
+    }
+}
+
 // MARK: - Filters
 
 struct MovieNightFilters: Codable, Hashable, Sendable {
@@ -73,7 +96,9 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
     var includeNowPlaying: Bool
     var includeTrending: Bool
     var deckSize: Int
-    var excludeSeenMovies: Bool
+    var excludeSeenMode: ExcludeSeenMode
+    var minimumYear: Int?
+    var excludeShorts: Bool
 
     static let `default` = MovieNightFilters(
         genreIds: [],
@@ -83,17 +108,22 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         includeNowPlaying: true,
         includeTrending: true,
         deckSize: 25,
-        excludeSeenMovies: true
+        excludeSeenMode: .mineOnly,
+        minimumYear: nil,
+        excludeShorts: true
     )
 
     enum CodingKeys: String, CodingKey {
         case genreIds, watchProviderIds, watchRegion, minVoteAverage
-        case includeNowPlaying, includeTrending, deckSize, excludeSeenMovies
+        case includeNowPlaying, includeTrending, deckSize
+        case excludeSeenMovies // legacy boolean key
+        case excludeSeenMode, minimumYear, excludeShorts
     }
 
     init(genreIds: [Int], watchProviderIds: [Int], watchRegion: String,
          minVoteAverage: Double, includeNowPlaying: Bool, includeTrending: Bool,
-         deckSize: Int, excludeSeenMovies: Bool = true) {
+         deckSize: Int, excludeSeenMode: ExcludeSeenMode = .mineOnly,
+         minimumYear: Int? = nil, excludeShorts: Bool = true) {
         self.genreIds = genreIds
         self.watchProviderIds = watchProviderIds
         self.watchRegion = watchRegion
@@ -101,7 +131,9 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         self.includeNowPlaying = includeNowPlaying
         self.includeTrending = includeTrending
         self.deckSize = deckSize
-        self.excludeSeenMovies = excludeSeenMovies
+        self.excludeSeenMode = excludeSeenMode
+        self.minimumYear = minimumYear
+        self.excludeShorts = excludeShorts
     }
 
     init(from decoder: Decoder) throws {
@@ -113,7 +145,30 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         includeNowPlaying = try container.decode(Bool.self, forKey: .includeNowPlaying)
         includeTrending = try container.decode(Bool.self, forKey: .includeTrending)
         deckSize = try container.decode(Int.self, forKey: .deckSize)
-        excludeSeenMovies = try container.decodeIfPresent(Bool.self, forKey: .excludeSeenMovies) ?? true
+        minimumYear = try container.decodeIfPresent(Int.self, forKey: .minimumYear)
+        excludeShorts = try container.decodeIfPresent(Bool.self, forKey: .excludeShorts) ?? true
+
+        // Backward compatibility: read new enum or fall back to old boolean
+        if let mode = try? container.decode(ExcludeSeenMode.self, forKey: .excludeSeenMode) {
+            excludeSeenMode = mode
+        } else {
+            let oldBool = try container.decodeIfPresent(Bool.self, forKey: .excludeSeenMovies) ?? true
+            excludeSeenMode = oldBool ? .mineOnly : .none
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(genreIds, forKey: .genreIds)
+        try container.encode(watchProviderIds, forKey: .watchProviderIds)
+        try container.encode(watchRegion, forKey: .watchRegion)
+        try container.encode(minVoteAverage, forKey: .minVoteAverage)
+        try container.encode(includeNowPlaying, forKey: .includeNowPlaying)
+        try container.encode(includeTrending, forKey: .includeTrending)
+        try container.encode(deckSize, forKey: .deckSize)
+        try container.encode(excludeSeenMode, forKey: .excludeSeenMode)
+        try container.encodeIfPresent(minimumYear, forKey: .minimumYear)
+        try container.encode(excludeShorts, forKey: .excludeShorts)
     }
 }
 
@@ -249,6 +304,7 @@ extension MovieNightSession {
             "user-002": "Jordan",
             "user-003": "Sam"
         ],
+        participantSeenIds: nil,
         createdAt: Date(),
         completedAt: nil
     )

@@ -106,8 +106,8 @@ enum TMDBEndpoint: Sendable {
     case configuration
     case trending(timeWindow: String, page: Int)
     case watchProviders(movieId: Int)
-    case discoverForMovieNight(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int)
-    case discoverClassics(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int)
+    case discoverForMovieNight(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?)
+    case discoverClassics(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?)
 
     var path: String {
         switch self {
@@ -161,7 +161,7 @@ enum TMDBEndpoint: Sendable {
             ])
         case .trending(_, let page):
             items.append(URLQueryItem(name: "page", value: "\(page)"))
-        case .discoverForMovieNight(let providerIds, let region, let genreIds, let minVote, let page):
+        case .discoverForMovieNight(let providerIds, let region, let genreIds, let minVote, let page, let minimumYear, let minimumRuntime):
             items.append(contentsOf: [
                 URLQueryItem(name: "page", value: "\(page)"),
                 URLQueryItem(name: "sort_by", value: "popularity.desc"),
@@ -176,9 +176,15 @@ enum TMDBEndpoint: Sendable {
                 items.append(URLQueryItem(name: "with_watch_monetization_types", value: "flatrate"))
             }
             if !genreIds.isEmpty {
-                items.append(URLQueryItem(name: "with_genres", value: genreIds.map { "\($0)" }.joined(separator: ",")))
+                items.append(URLQueryItem(name: "with_genres", value: genreIds.map { "\($0)" }.joined(separator: "|")))
             }
-        case .discoverClassics(let providerIds, let region, let genreIds, let minVote, let page):
+            if let year = minimumYear {
+                items.append(URLQueryItem(name: "primary_release_date.gte", value: "\(year)-01-01"))
+            }
+            if let runtime = minimumRuntime {
+                items.append(URLQueryItem(name: "with_runtime.gte", value: "\(runtime)"))
+            }
+        case .discoverClassics(let providerIds, let region, let genreIds, let minVote, let page, let minimumYear, let minimumRuntime):
             items.append(contentsOf: [
                 URLQueryItem(name: "page", value: "\(page)"),
                 URLQueryItem(name: "sort_by", value: "vote_average.desc"),
@@ -193,7 +199,13 @@ enum TMDBEndpoint: Sendable {
                 items.append(URLQueryItem(name: "with_watch_monetization_types", value: "flatrate"))
             }
             if !genreIds.isEmpty {
-                items.append(URLQueryItem(name: "with_genres", value: genreIds.map { "\($0)" }.joined(separator: ",")))
+                items.append(URLQueryItem(name: "with_genres", value: genreIds.map { "\($0)" }.joined(separator: "|")))
+            }
+            if let year = minimumYear {
+                items.append(URLQueryItem(name: "primary_release_date.gte", value: "\(year)-01-01"))
+            }
+            if let runtime = minimumRuntime {
+                items.append(URLQueryItem(name: "with_runtime.gte", value: "\(runtime)"))
             }
         default:
             break

@@ -29,6 +29,9 @@ final class AuthenticationService: ObservableObject {
     @Published private(set) var isAuthenticated = false
     @Published private(set) var isLoading = false
     @Published private(set) var hasCompletedProfileSetup = false
+    /// True until Firebase's auth listener has fired at least once — prevents
+    /// a flash of the onboarding screen on cold start for already-signed-in users.
+    @Published private(set) var isInitializing = true
     @Published var error: String?
 
     // MARK: - Private Properties
@@ -73,6 +76,8 @@ final class AuthenticationService: ObservableObject {
                     self?.isAuthenticated = false
                     self?.hasCompletedProfileSetup = false
                 }
+                // Auth state has been resolved — safe to show real UI now
+                self?.isInitializing = false
             }
         }
     }

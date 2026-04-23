@@ -13,6 +13,7 @@ struct MovieNightSetupView: View {
     @State private var filters = MovieNightFilters.default
     @State private var genres: [Genre] = []
     @State private var isLoadingGenres = true
+    @State private var showExitConfirm = false
 
     private let totalSteps = 4
 
@@ -46,6 +47,29 @@ struct MovieNightSetupView: View {
         }
         .navigationTitle("Movie Night Setup")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    showExitConfirm = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Back")
+                    }
+                    .foregroundColor(FFColors.goldPrimary)
+                }
+            }
+        }
+        .alert("Discard Setup?", isPresented: $showExitConfirm) {
+            Button("Keep Editing", role: .cancel) {}
+            Button("Discard", role: .destructive) {
+                viewModel.currentPhase = .entry
+            }
+        } message: {
+            Text("Your filter selections will be lost.")
+        }
         .task {
             await loadGenres()
         }
@@ -82,10 +106,10 @@ struct MovieNightSetupView: View {
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else {
                     LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: FFSpacing.md) {
+                        GridItem(.flexible(), spacing: FFSpacing.md),
+                        GridItem(.flexible(), spacing: FFSpacing.md),
+                        GridItem(.flexible(), spacing: FFSpacing.md)
+                    ], spacing: FFSpacing.lg) {
                         ForEach(genres) { genre in
                             genreChip(genre: genre)
                         }
@@ -133,7 +157,7 @@ struct MovieNightSetupView: View {
                         Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1)
                     }
                 }
-                .scaleEffect(isSelected ? 1.05 : 1.0)
+                .scaleEffect(isSelected ? 1.02 : 1.0)
         }
         .buttonStyle(.plain)
     }
@@ -216,15 +240,54 @@ struct MovieNightSetupView: View {
         .buttonStyle(.plain)
     }
 
+    private let yearOptions: [(String, Int?)] = [
+        ("Any Era", nil), ("2020+", 2020), ("2010+", 2010), ("2000+", 2000),
+        ("1990+", 1990), ("1980+", 1980), ("1970+", 1970)
+    ]
+
     // MARK: - Step 3: Preferences
 
     private var preferencesStep: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: FFSpacing.xxl) {
+            VStack(alignment: .leading, spacing: FFSpacing.xl) {
                 stepHeader(
                     title: "Fine-Tune",
                     subtitle: "Set your quality bar and sources"
                 )
+
+                // Year filter
+                GlassCard {
+                    VStack(alignment: .leading, spacing: FFSpacing.md) {
+                        HStack(spacing: FFSpacing.sm) {
+                            Image(systemName: "calendar")
+                                .foregroundColor(FFColors.goldPrimary)
+                            Text("Movies From")
+                                .font(FFTypography.titleSmall)
+                                .foregroundColor(FFColors.textPrimary)
+                        }
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: FFSpacing.sm) {
+                                ForEach(yearOptions, id: \.0) { label, year in
+                                    let isSelected = filters.minimumYear == year
+                                    Button {
+                                        filters.minimumYear = year
+                                    } label: {
+                                        Text(label)
+                                            .font(FFTypography.labelSmall)
+                                            .foregroundColor(isSelected ? FFColors.backgroundDark : FFColors.textPrimary)
+                                            .padding(.horizontal, FFSpacing.md)
+                                            .padding(.vertical, FFSpacing.sm)
+                                            .background(isSelected ? FFColors.goldPrimary : FFColors.backgroundElevated)
+                                            .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
 
                 // Rating threshold
                 GlassCard {
@@ -257,9 +320,27 @@ struct MovieNightSetupView: View {
                 }
                 .padding(.horizontal)
 
-                // Source toggles
+                // Toggles
                 GlassCard {
                     VStack(spacing: FFSpacing.lg) {
+                        Toggle(isOn: $filters.excludeShorts) {
+                            HStack(spacing: FFSpacing.md) {
+                                Image(systemName: "timer")
+                                    .foregroundColor(FFColors.goldPrimary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Exclude Short Films")
+                                        .font(FFTypography.labelLarge)
+                                        .foregroundColor(FFColors.textPrimary)
+                                    Text("Hide movies under 40 minutes")
+                                        .font(FFTypography.caption)
+                                        .foregroundColor(FFColors.textTertiary)
+                                }
+                            }
+                        }
+                        .tint(FFColors.goldPrimary)
+
+                        Divider().background(Color.white.opacity(0.1))
+
                         Toggle(isOn: $filters.includeTrending) {
                             HStack(spacing: FFSpacing.md) {
                                 Image(systemName: "flame.fill")
@@ -293,24 +374,31 @@ struct MovieNightSetupView: View {
                             }
                         }
                         .tint(FFColors.goldPrimary)
+                    }
+                }
+                .padding(.horizontal)
 
-                        Divider().background(Color.white.opacity(0.1))
+                // Watched movies exclusion
+                GlassCard {
+                    VStack(alignment: .leading, spacing: FFSpacing.md) {
+                        HStack(spacing: FFSpacing.sm) {
+                            Image(systemName: "eye.slash.fill")
+                                .foregroundColor(FFColors.textSecondary)
+                            Text("Watched Movies")
+                                .font(FFTypography.titleSmall)
+                                .foregroundColor(FFColors.textPrimary)
+                            Spacer()
+                            Text("\(SeenMoviesService.shared.count) tracked")
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textTertiary)
+                        }
 
-                        Toggle(isOn: $filters.excludeSeenMovies) {
-                            HStack(spacing: FFSpacing.md) {
-                                Image(systemName: "eye.slash.fill")
-                                    .foregroundColor(FFColors.textSecondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Exclude Watched Movies")
-                                        .font(FFTypography.labelLarge)
-                                        .foregroundColor(FFColors.textPrimary)
-                                    Text("\(SeenMoviesService.shared.count) movies tracked in your profile")
-                                        .font(FFTypography.caption)
-                                        .foregroundColor(FFColors.textTertiary)
-                                }
+                        Picker("Exclude Watched", selection: $filters.excludeSeenMode) {
+                            ForEach(ExcludeSeenMode.allCases, id: \.self) { mode in
+                                Text(mode.displayName).tag(mode)
                             }
                         }
-                        .tint(FFColors.goldPrimary)
+                        .pickerStyle(.segmented)
                     }
                 }
                 .padding(.horizontal)
@@ -352,7 +440,7 @@ struct MovieNightSetupView: View {
         }
     }
 
-    // MARK: - Step 5: Review
+    // MARK: - Step 4: Review
 
     private var reviewStep: some View {
         ScrollView(showsIndicators: false) {
@@ -388,11 +476,17 @@ struct MovieNightSetupView: View {
                         Divider().background(Color.white.opacity(0.1))
 
                         reviewRow(
+                            icon: "calendar",
+                            title: "Era",
+                            value: filters.minimumYear.map { "\($0) and newer" } ?? "Any era"
+                        )
+
+                        Divider().background(Color.white.opacity(0.1))
+
+                        reviewRow(
                             icon: "eye.slash.fill",
-                            title: "Seen Movies",
-                            value: filters.excludeSeenMovies
-                                ? "Excluding \(SeenMoviesService.shared.count) watched movies"
-                                : "Including all movies"
+                            title: "Watched",
+                            value: filters.excludeSeenMode.displayName
                         )
 
                         Divider().background(Color.white.opacity(0.1))

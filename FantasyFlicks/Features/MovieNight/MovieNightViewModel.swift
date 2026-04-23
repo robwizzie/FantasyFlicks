@@ -47,8 +47,6 @@ final class MovieNightViewModel: ObservableObject {
 
     var allParticipantsFinished: Bool {
         guard let session, !deckMovies.isEmpty else { return false }
-        // Use deckMovies.count (actually loaded) not deckTmdbIds.count (requested)
-        // since some movies may fail to load from TMDB
         let deckSize = deckMovies.count
         return session.participantIds.allSatisfy { userId in
             (participantProgress[userId] ?? 0) >= deckSize
@@ -67,6 +65,7 @@ final class MovieNightViewModel: ObservableObject {
     private let authService = AuthenticationService.shared
     private var sessionListener: ListenerRegistration?
     private var swipesListener: ListenerRegistration?
+    private var isDeckLoading = false  // prevent concurrent loadDeckMovies calls
 
     // MARK: - Initialization
 
@@ -86,6 +85,27 @@ final class MovieNightViewModel: ObservableObject {
     func loadUserSessions() async {
         do {
             userSessions = try await movieNightService.getUserSessions()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Delete a session
+    func deleteSession(_ session: MovieNightSession) async {
+        do {
+            try await movieNightService.deleteSession(sessionId: session.id)
+            userSessions.removeAll { $0.id == session.id }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Update session filters (host only, before swiping starts)
+    func updateSessionFilters(_ filters: MovieNightFilters) async {
+        guard let session, isHost else { return }
+        do {
+            try await movieNightService.updateFilters(sessionId: session.id, filters: filters)
+            // Listener will pick up the change and update self.session
         } catch {
             self.error = error.localizedDescription
         }
@@ -130,6 +150,14 @@ final class MovieNightViewModel: ObservableObject {
         session = existingSession
         setupListeners(sessionId: existingSession.id)
 
+        // Refresh uploaded seen IDs if we're in the lobby (they may have changed)
+        if existingSession.status == .lobby {
+            let seenArray = Array(seenMovieIds)
+            Task {
+                try? await movieNightService.uploadSeenIds(sessionId: existingSession.id, seenIds: seenArray)
+            }
+        }
+
         switch existingSession.status {
         case .lobby:
             currentPhase = .lobby
@@ -146,20 +174,53 @@ final class MovieNightViewModel: ObservableObject {
 
     /// Host starts the swiping phase
     func startSwiping() async {
-        guard isHost, let session else { return }
+        guard let session else {
+            self.error = "No active session found."
+            return
+        }
+        guard isHost else {
+            self.error = "Only the host can start swiping."
+            return
+        }
+
         isLoading = true
         error = nil
 
         do {
-            // Build the deck from TMDB, excluding movies participants have already seen
-            let excludeIds: Set<Int> = session.filters.excludeSeenMovies ? seenMovieIds : []
-            let movies = try await tmdbService.buildMovieNightDeck(filters: session.filters, excludeTmdbIds: excludeIds)
+            // Snapshot filters before any async work so listener can't change them
+            let filters = session.filters
+            let excludeIds: Set<Int>
+            switch filters.excludeSeenMode {
+            case .none:
+                excludeIds = []
+            case .mineOnly:
+                excludeIds = seenMovieIds
+            case .everyoneInParty:
+                // Union of ALL participants' seen lists (uploaded on join)
+                excludeIds = session.allParticipantsSeenIds.union(seenMovieIds)
+            }
+
+            let movies = try await tmdbService.buildMovieNightDeck(filters: filters, excludeTmdbIds: excludeIds)
+
             guard !movies.isEmpty else {
-                self.error = "No movies found matching your filters. Try broadening your selections."
+                let genreCount = filters.genreIds.count
+                let providerCount = filters.watchProviderIds.count
+                var hint = "No movies found matching your filters."
+                if genreCount > 0 && providerCount > 0 {
+                    hint += " Try selecting fewer genres or more streaming services."
+                } else if genreCount > 0 {
+                    hint += " Try selecting fewer genres."
+                } else if providerCount > 0 {
+                    hint += " Try adding more streaming services."
+                } else {
+                    hint += " Try lowering the minimum rating."
+                }
+                self.error = hint
                 isLoading = false
                 return
             }
 
+            // Set deck BEFORE writing to Firestore so listener doesn't trigger loadDeckMovies
             deckMovies = movies
             let tmdbIds = movies.map { $0.tmdbId }
 
@@ -171,7 +232,7 @@ final class MovieNightViewModel: ObservableObject {
 
             currentPhase = .swiping
         } catch {
-            self.error = error.localizedDescription
+            self.error = "Failed to build deck: \(error.localizedDescription)"
         }
 
         isLoading = false
@@ -295,16 +356,18 @@ final class MovieNightViewModel: ObservableObject {
         guard let session else { return }
         let filters = session.filters
 
-        // Reset local state
+        // Reset local state but keep global seen movies
         self.session = nil
         deckMovies = []
         allSwipes = []
         currentCardIndex = 0
         results = []
         participantProgress = [:]
-        seenMovieIds = []
         showCelebration = false
         celebrationMovie = nil
+
+        // Reload global seen movies (don't clear them)
+        seenMovieIds = SeenMoviesService.shared.seenTmdbIds
 
         // Clean up old listeners
         sessionListener?.remove()
@@ -330,15 +393,18 @@ final class MovieNightViewModel: ObservableObject {
                 case .swiping:
                     if self.currentPhase != .swiping {
                         self.currentPhase = .swiping
-                        // Only load deck if not already loaded (host loads it in startSwiping)
-                        if self.deckMovies.isEmpty {
-                            Task { await self.loadDeckMovies() }
-                        }
+                    }
+                    // Load deck if not already loaded (host loads in startSwiping)
+                    if self.deckMovies.isEmpty && !self.isDeckLoading {
+                        Task { await self.loadDeckMovies() }
                     }
                 case .results:
                     if self.currentPhase != .results {
                         self.currentPhase = .results
-                        self.computeResults()
+                        // Only compute if deck is loaded
+                        if !self.deckMovies.isEmpty {
+                            self.computeResults()
+                        }
                     }
                 default:
                     break
@@ -367,65 +433,83 @@ final class MovieNightViewModel: ObservableObject {
 
     private func loadDeckMovies() async {
         guard let session, !session.deckTmdbIds.isEmpty else { return }
+        guard !isDeckLoading else { return }  // prevent concurrent calls
+        isDeckLoading = true
         isLoading = true
 
-        // Fetch every deck movie by individual ID so we always get the full deck
-        do {
-            var orderedMovies: [FFMovie] = []
+        // Fetch deck movies in small batches to avoid TMDB rate limits
+        var orderedMovies: [FFMovie] = []
+        let tmdbIds = session.deckTmdbIds
+        let batchSize = 5
 
-            // Batch fetch with concurrency limit
+        for batchStart in stride(from: 0, to: tmdbIds.count, by: batchSize) {
+            let batchEnd = min(batchStart + batchSize, tmdbIds.count)
+            let batch = Array(tmdbIds[batchStart..<batchEnd])
+
             await withTaskGroup(of: (Int, FFMovie?).self) { group in
-                for (index, tmdbId) in session.deckTmdbIds.enumerated() {
+                for tmdbId in batch {
                     group.addTask { [weak self] in
-                        guard let self else { return (index, nil) }
-                        return (index, try? await self.tmdbService.getFullMovie(id: tmdbId))
+                        guard let self else { return (tmdbId, nil) }
+                        return (tmdbId, try? await self.tmdbService.getFullMovie(id: tmdbId))
                     }
                 }
 
-                var indexed: [(Int, FFMovie)] = []
-                for await (index, movie) in group {
-                    if let movie { indexed.append((index, movie)) }
+                for await (tmdbId, movie) in group {
+                    if let movie {
+                        orderedMovies.append(movie)
+                    }
                 }
-
-                // Preserve the original deck order
-                orderedMovies = indexed.sorted { $0.0 < $1.0 }.map { $0.1 }
             }
+        }
 
-            deckMovies = orderedMovies
-            await fetchProviders(for: orderedMovies)
+        // Re-sort to match original deck order
+        let idOrder = Dictionary(uniqueKeysWithValues: tmdbIds.enumerated().map { ($0.element, $0.offset) })
+        orderedMovies.sort { (idOrder[$0.tmdbId] ?? 0) < (idOrder[$1.tmdbId] ?? 0) }
 
-            // Restore current card index from existing swipes
-            if let userId = authService.currentUser?.id {
-                let mySwipeCount = allSwipes.filter { $0.userId == userId }.count
-                currentCardIndex = mySwipeCount
-            }
-        } catch {
-            self.error = error.localizedDescription
+        deckMovies = orderedMovies
+        await fetchProviders(for: orderedMovies)
+
+        // Restore current card index from existing swipes
+        if let userId = authService.currentUser?.id {
+            let mySwipeCount = allSwipes.filter { $0.userId == userId }.count
+            currentCardIndex = mySwipeCount
+        }
+
+        // If we're on the results phase, compute now that deck is loaded
+        if currentPhase == .results {
+            computeResults()
         }
 
         isLoading = false
+        isDeckLoading = false
     }
 
     private func fetchProviders(for movies: [FFMovie]) async {
-        // Batch fetch watch providers for movies (limit concurrency)
-        await withTaskGroup(of: (Int, [WatchProvider]).self) { group in
-            for movie in movies.prefix(25) {
-                group.addTask { [weak self] in
-                    guard let self else { return (movie.tmdbId, []) }
-                    do {
-                        let response = try await self.tmdbService.getWatchProviders(movieId: movie.tmdbId)
-                        if let usProviders = response.results["US"]?.flatrate {
-                            return (movie.tmdbId, usProviders.map {
-                                WatchProvider(id: $0.providerId, name: $0.providerName, logoPath: $0.logoPath)
-                            })
-                        }
-                    } catch {}
-                    return (movie.tmdbId, [])
-                }
-            }
+        // Batch fetch watch providers in small groups to avoid rate limits
+        let batchSize = 5
+        for batchStart in stride(from: 0, to: movies.count, by: batchSize) {
+            let batchEnd = min(batchStart + batchSize, movies.count)
+            let batch = Array(movies[batchStart..<batchEnd])
 
-            for await (tmdbId, providers) in group {
-                movieProviders[tmdbId] = providers
+            await withTaskGroup(of: (Int, [WatchProvider]).self) { group in
+                for movie in batch {
+                    group.addTask { [weak self] in
+                        guard let self else { return (movie.tmdbId, []) }
+                        do {
+                            let response = try await self.tmdbService.getWatchProviders(movieId: movie.tmdbId)
+                            if let usProviders = response.results["US"]?.flatrate {
+                                return (movie.tmdbId, usProviders.map {
+                                    WatchProvider(id: $0.providerId, name: $0.providerName, logoPath: $0.logoPath)
+                                })
+                            }
+                        } catch {}
+                        return (movie.tmdbId, [])
+                    }
+                }
+
+                for await (tmdbId, providers) in group {
+                    movieProviders[tmdbId] = providers
+                }
             }
         }
     }

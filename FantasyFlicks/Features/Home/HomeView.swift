@@ -349,28 +349,32 @@ struct HomeView: View {
                 .padding(.horizontal)
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: FFSpacing.md) {
-                ComingSoonCard(
-                    icon: "plus.circle.fill",
-                    title: "Create League",
-                    color: FFColors.goldPrimary
-                )
+                QuickActionCard(
+                    icon: "clock.fill",
+                    title: "My Nights",
+                    color: FFColors.ruby
+                ) {
+                    navigationCoordinator.navigateTo(.movieNights)
+                }
 
-                ComingSoonCard(
-                    icon: "person.badge.plus",
-                    title: "Join League",
-                    color: FFColors.goldLight
-                )
+                QuickActionCard(
+                    icon: "magnifyingglass",
+                    title: "Browse Movies",
+                    color: FFColors.goldDark
+                ) {
+                    navigationCoordinator.navigateTo(.movies)
+                }
 
                 ComingSoonCard(
                     icon: "list.clipboard.fill",
                     title: "Fantasy Draft",
-                    color: FFColors.ruby
+                    color: FFColors.goldPrimary
                 )
 
                 ComingSoonCard(
-                    icon: "magnifyingglass",
-                    title: "Browse Movies",
-                    color: FFColors.goldDark
+                    icon: "trophy.fill",
+                    title: "Leagues",
+                    color: FFColors.goldLight
                 )
             }
             .padding(.horizontal)

@@ -34,6 +34,7 @@ final class MovieNightService {
         }
 
         let sessionId = UUID().uuidString
+        let hostSeenIds = Array(SeenMoviesService.shared.seenTmdbIds)
         let session = MovieNightSession(
             id: sessionId,
             hostId: user.id,
@@ -43,12 +44,23 @@ final class MovieNightService {
             deckTmdbIds: [],
             filters: filters,
             participantNames: [user.id: user.displayName.isEmpty ? user.username : user.displayName],
+            participantSeenIds: [user.id: hostSeenIds],
             createdAt: Date(),
             completedAt: nil
         )
 
         try db.collection("movieNightSessions").document(sessionId).setData(from: session)
         return session
+    }
+
+    /// Upload the current user's seen movie IDs to the session (for party-wide exclusion)
+    func uploadSeenIds(sessionId: String, seenIds: [Int]) async throws {
+        guard let userId = authService.currentUser?.id else {
+            throw MovieNightError.notAuthenticated
+        }
+        try await db.collection("movieNightSessions").document(sessionId).updateData([
+            "participantSeenIds.\(userId)": seenIds
+        ])
     }
 
     /// Join an existing session by invite code
@@ -79,15 +91,27 @@ final class MovieNightService {
 
         // Add participant
         let displayName = user.displayName.isEmpty ? user.username : user.displayName
+        let userSeenIds = Array(SeenMoviesService.shared.seenTmdbIds)
         session.participantIds.append(user.id)
         session.participantNames[user.id] = displayName
+        if session.participantSeenIds == nil { session.participantSeenIds = [:] }
+        session.participantSeenIds?[user.id] = userSeenIds
 
         try await db.collection("movieNightSessions").document(session.id).updateData([
             "participantIds": FieldValue.arrayUnion([user.id]),
-            "participantNames.\(user.id)": displayName
+            "participantNames.\(user.id)": displayName,
+            "participantSeenIds.\(user.id)": userSeenIds
         ])
 
         return session
+    }
+
+    /// Update session filters (host only, while still in lobby)
+    func updateFilters(sessionId: String, filters: MovieNightFilters) async throws {
+        let data = try Firestore.Encoder().encode(filters)
+        try await db.collection("movieNightSessions").document(sessionId).updateData([
+            "filters": data
+        ])
     }
 
     /// Start swiping phase — writes deck to session and transitions status
@@ -148,6 +172,25 @@ final class MovieNightService {
             "participantIds": FieldValue.arrayRemove([userId]),
             "participantNames.\(userId)": FieldValue.delete()
         ])
+    }
+
+    /// Delete a session (host only) or remove self from it
+    func deleteSession(sessionId: String) async throws {
+        guard let userId = authService.currentUser?.id else {
+            throw MovieNightError.notAuthenticated
+        }
+
+        let docRef = db.collection("movieNightSessions").document(sessionId)
+        let snapshot = try await docRef.getDocument()
+        guard let session = try? snapshot.data(as: MovieNightSession.self) else { return }
+
+        if session.hostId == userId {
+            // Host: delete the entire session document
+            try await docRef.delete()
+        } else {
+            // Non-host: just remove self from participants
+            try await leaveSession(sessionId: sessionId)
+        }
     }
 
     // MARK: - Queries

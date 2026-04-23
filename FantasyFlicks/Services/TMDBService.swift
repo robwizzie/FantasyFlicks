@@ -181,7 +181,9 @@ final class TMDBService {
             region: filters.watchRegion,
             genreIds: filters.genreIds,
             minVote: filters.minVoteAverage,
-            page: page
+            page: page,
+            minimumYear: filters.minimumYear,
+            minimumRuntime: filters.excludeShorts ? 40 : nil
         ).url() else {
             throw NetworkError.invalidURL
         }
@@ -195,11 +197,22 @@ final class TMDBService {
             region: filters.watchRegion,
             genreIds: filters.genreIds,
             minVote: filters.minVoteAverage,
-            page: page
+            page: page,
+            minimumYear: filters.minimumYear,
+            minimumRuntime: filters.excludeShorts ? 40 : nil
         ).url() else {
             throw NetworkError.invalidURL
         }
         return try await networkManager.get(url: url)
+    }
+
+    /// Safely fetch a page, returning empty results on failure instead of throwing
+    private func safeFetch(_ fetch: () async throws -> TMDBMovieListResponse) async -> TMDBMovieListResponse {
+        do {
+            return try await fetch()
+        } catch {
+            return TMDBMovieListResponse(page: 1, results: [], totalPages: 0, totalResults: 0)
+        }
     }
 
     /// Build a Movie Night deck from TMDB based on filters
@@ -208,49 +221,54 @@ final class TMDBService {
         var seenIds = excludeTmdbIds
         let targetSize = filters.deckSize
 
-        // 1. Fetch popular recent movies (popularity sort)
-        let popularPages = max(2, Int(ceil(Double(targetSize) / 20.0)))
-        for page in 1...popularPages {
-            guard allMovies.count < targetSize else { break }
-            let response = try await discoverForMovieNight(filters: filters, page: page)
+        // 1. Fetch popular movies — this is the primary source, let it throw on failure
+        //    so the user sees the real error instead of "no movies found"
+        let firstPage = try await discoverForMovieNight(filters: filters, page: 1)
+        let firstFiltered = firstPage.results.filter { !seenIds.contains($0.id) }
+        for movie in firstFiltered { seenIds.insert(movie.id) }
+        allMovies.append(contentsOf: firstFiltered)
+
+        // Fetch more pages if needed (these can fail silently)
+        for page in 2...4 {
+            if allMovies.count >= targetSize * 2 { break }
+            if firstPage.totalPages < page { break }
+            let response = await safeFetch { try await self.discoverForMovieNight(filters: filters, page: page) }
+            let filtered = response.results.filter { !seenIds.contains($0.id) }
+            for movie in filtered { seenIds.insert(movie.id) }
+            allMovies.append(contentsOf: filtered)
+        }
+
+        // 2. Fetch top-rated classics (secondary source, safe)
+        for page in 1...3 {
+            if allMovies.count >= targetSize * 3 { break }
+            let response = await safeFetch { try await self.discoverClassics(filters: filters, page: page) }
             let filtered = response.results.filter { !seenIds.contains($0.id) }
             for movie in filtered { seenIds.insert(movie.id) }
             allMovies.append(contentsOf: filtered)
             if response.totalPages <= page { break }
         }
 
-        // 2. Fetch top-rated classics (vote_average sort — includes older films)
-        let classicPages = max(2, Int(ceil(Double(targetSize) / 20.0)))
-        for page in 1...classicPages {
-            guard allMovies.count < targetSize * 2 else { break }
-            let response = try await discoverClassics(filters: filters, page: page)
-            let filtered = response.results.filter { !seenIds.contains($0.id) }
-            for movie in filtered { seenIds.insert(movie.id) }
-            allMovies.append(contentsOf: filtered)
-            if response.totalPages <= page { break }
-        }
-
-        // 3. If trending is enabled, add trending too
-        if filters.includeTrending {
-            for page in 1...2 {
-                let trendingResponse = try await getTrendingMovies(timeWindow: "week", page: page)
-                let trendingFiltered = trendingResponse.results.filter { movie in
-                    (movie.voteAverage ?? 0) >= filters.minVoteAverage &&
-                    !seenIds.contains(movie.id)
-                }
-                for movie in trendingFiltered { seenIds.insert(movie.id) }
-                allMovies.append(contentsOf: trendingFiltered)
-            }
-        }
-
-        // 4. If now playing is enabled
-        if filters.includeNowPlaying {
-            let nowPlayingResponse = try await getNowPlayingMovies(page: 1)
-            let nowPlayingFiltered = nowPlayingResponse.results.filter { movie in
+        // 3. Only add trending if we don't have enough AND no provider filter is set
+        if allMovies.count < targetSize && filters.includeTrending && filters.watchProviderIds.isEmpty {
+            let response = await safeFetch { try await self.getTrendingMovies(timeWindow: "week", page: 1) }
+            let filtered = response.results.filter { movie in
                 (movie.voteAverage ?? 0) >= filters.minVoteAverage &&
-                !seenIds.contains(movie.id)
+                !seenIds.contains(movie.id) &&
+                matchesGenreFilter(movie: movie, genreIds: filters.genreIds)
             }
-            allMovies.append(contentsOf: nowPlayingFiltered)
+            for movie in filtered { seenIds.insert(movie.id) }
+            allMovies.append(contentsOf: filtered)
+        }
+
+        // 4. Only add now playing if we don't have enough AND no provider filter is set
+        if allMovies.count < targetSize && filters.includeNowPlaying && filters.watchProviderIds.isEmpty {
+            let response = await safeFetch { try await self.getNowPlayingMovies(page: 1) }
+            let filtered = response.results.filter { movie in
+                (movie.voteAverage ?? 0) >= filters.minVoteAverage &&
+                !seenIds.contains(movie.id) &&
+                matchesGenreFilter(movie: movie, genreIds: filters.genreIds)
+            }
+            allMovies.append(contentsOf: filtered)
         }
 
         // Deduplicate, shuffle for variety, then trim to deck size
@@ -261,6 +279,13 @@ final class TMDBService {
 
         // Convert to FFMovie
         return deckMovies.map { convertToFFMovie($0) }
+    }
+
+    /// Check if a movie matches the selected genre filter (empty = all genres pass)
+    private func matchesGenreFilter(movie: TMDBMovie, genreIds: [Int]) -> Bool {
+        guard !genreIds.isEmpty else { return true }
+        guard let movieGenres = movie.genreIds else { return false }
+        return !Set(genreIds).isDisjoint(with: Set(movieGenres))
     }
 
     /// Fetch full movie with details and credits

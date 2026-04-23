@@ -9,9 +9,10 @@ import SwiftUI
 
 struct MovieNightEntryView: View {
     @StateObject private var viewModel = MovieNightViewModel()
-    @Environment(\.dismiss) private var dismiss
     @State private var joinCode = ""
     @State private var showJoinField = false
+    @State private var sessionToDelete: MovieNightSession?
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -52,12 +53,6 @@ struct MovieNightEntryView: View {
             }
             .navigationTitle("Movie Night")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
-                        .foregroundColor(FFColors.goldPrimary)
-                }
-            }
             .navigationDestination(isPresented: Binding(
                 get: { viewModel.currentPhase == .setup },
                 set: { if !$0 { viewModel.currentPhase = .entry } }
@@ -72,7 +67,7 @@ struct MovieNightEntryView: View {
             }
             .navigationDestination(isPresented: Binding(
                 get: { viewModel.currentPhase == .swiping },
-                set: { if !$0 { viewModel.currentPhase = .entry } }
+                set: { _ in } // Prevent back-swipe from exiting swiping — must finish
             )) {
                 MovieNightSwipeView(viewModel: viewModel)
             }
@@ -84,6 +79,12 @@ struct MovieNightEntryView: View {
             }
             .task {
                 await viewModel.loadUserSessions()
+                // Auto-resume a session if one was pending from the history tab
+                if let pendingId = NavigationCoordinator.shared.pendingResumeSessionId,
+                   let session = viewModel.userSessions.first(where: { $0.id == pendingId }) {
+                    viewModel.resumeSession(session)
+                    NavigationCoordinator.shared.pendingResumeSessionId = nil
+                }
             }
         }
     }
@@ -214,65 +215,94 @@ struct MovieNightEntryView: View {
 
     private var recentSessionsSection: some View {
         VStack(alignment: .leading, spacing: FFSpacing.md) {
-            Text("Recent Sessions")
+            Text("Your Sessions")
                 .font(FFTypography.headlineSmall)
                 .foregroundColor(FFColors.textPrimary)
                 .padding(.horizontal)
 
-            ForEach(viewModel.userSessions) { session in
-                sessionRow(session: session)
+            VStack(spacing: FFSpacing.sm) {
+                ForEach(viewModel.userSessions) { session in
+                    sessionRow(session: session)
+                }
             }
+        }
+        .alert("Delete Movie Night?", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                if let session = sessionToDelete {
+                    Task { await viewModel.deleteSession(session) }
+                }
+            }
+        } message: {
+            Text("This will permanently remove this session.")
         }
     }
 
     private func sessionRow(session: MovieNightSession) -> some View {
-        Button {
-            viewModel.resumeSession(session)
-        } label: {
-            HStack(spacing: FFSpacing.md) {
-                // Status icon
-                Image(systemName: session.status.iconName)
-                    .font(.system(size: 24))
-                    .foregroundColor(statusColor(for: session.status))
-                    .frame(width: 44, height: 44)
-                    .background(statusColor(for: session.status).opacity(0.15))
-                    .clipShape(Circle())
+        HStack(spacing: FFSpacing.md) {
+            // Main tappable area
+            Button {
+                viewModel.resumeSession(session)
+            } label: {
+                HStack(spacing: FFSpacing.md) {
+                    Image(systemName: session.status.iconName)
+                        .font(.system(size: 22))
+                        .foregroundColor(statusColor(for: session.status))
+                        .frame(width: 44, height: 44)
+                        .background(statusColor(for: session.status).opacity(0.15))
+                        .clipShape(Circle())
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(session.participantNames.values.joined(separator: ", "))
-                            .font(FFTypography.labelMedium)
-                            .foregroundColor(FFColors.textPrimary)
-                            .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(session.participantNames.values.joined(separator: ", "))
+                                .font(FFTypography.labelMedium)
+                                .foregroundColor(FFColors.textPrimary)
+                                .lineLimit(1)
 
-                        Spacer()
+                            Spacer(minLength: FFSpacing.sm)
 
-                        Badge(text: session.status.displayName,
-                              style: session.status == .results ? .gold : .default)
-                    }
+                            Badge(text: session.status.displayName,
+                                  style: session.status == .results ? .gold : .default)
+                        }
 
-                    HStack(spacing: FFSpacing.md) {
-                        Label("\(session.participantCount)", systemImage: "person.2.fill")
-                            .font(FFTypography.caption)
-                            .foregroundColor(FFColors.textTertiary)
+                        HStack(spacing: FFSpacing.md) {
+                            Label("\(session.participantCount)", systemImage: "person.2.fill")
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textTertiary)
 
-                        Text(session.createdAt, style: .relative)
-                            .font(FFTypography.caption)
-                            .foregroundColor(FFColors.textTertiary)
+                            Text(session.createdAt, style: .relative)
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textTertiary)
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(FFSpacing.md)
-            .background {
-                RoundedRectangle(cornerRadius: FFCornerRadius.medium)
-                    .fill(FFColors.backgroundElevated.opacity(0.5))
+            .buttonStyle(.plain)
+
+            // Separate delete button
+            Button {
+                sessionToDelete = session
+                showDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 14))
+                    .foregroundColor(FFColors.ruby.opacity(0.7))
+                    .frame(width: 36, height: 36)
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: FFCornerRadius.medium)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, FFSpacing.md)
+        .padding(.vertical, FFSpacing.sm)
+        .background {
+            RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                .fill(FFColors.backgroundElevated.opacity(0.5))
+                .overlay {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                }
+        }
         .padding(.horizontal)
     }
 

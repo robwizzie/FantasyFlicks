@@ -53,7 +53,9 @@ struct FantasyFlicksApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if !authService.isAuthenticated {
+                if authService.isInitializing {
+                    SplashScreen()
+                } else if !authService.isAuthenticated {
                     OnboardingView()
                 } else if !authService.hasCompletedProfileSetup {
                     ProfileSetupView()
@@ -62,6 +64,8 @@ struct FantasyFlicksApp: App {
                 }
             }
             .ffTheme()
+            .animation(.easeInOut(duration: 0.35), value: authService.isInitializing)
+            .animation(.easeInOut(duration: 0.25), value: authService.isAuthenticated)
         }
     }
 }

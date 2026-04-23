@@ -14,6 +14,9 @@ struct ProfileView: View {
     @State private var showSettings = false
     @State private var showEditProfile = false
     @State private var showWatchedMovies = false
+    @State private var showDiary = false
+    @State private var showWatchlist = false
+    @State private var showRatings = false
 
     var body: some View {
         NavigationStack {
@@ -81,6 +84,15 @@ struct ProfileView: View {
             }
             .sheet(isPresented: $showWatchedMovies) {
                 WatchedMoviesSheet()
+            }
+            .sheet(isPresented: $showDiary) {
+                DiaryView()
+            }
+            .sheet(isPresented: $showWatchlist) {
+                WatchlistView()
+            }
+            .sheet(isPresented: $showRatings) {
+                RatingsView()
             }
             .alert("Error", isPresented: .constant(viewModel.error != nil)) {
                 Button("OK") { viewModel.clearMessages() }
@@ -252,52 +264,56 @@ struct ProfileView: View {
 
     private var watchedMoviesSection: some View {
         VStack(alignment: .leading, spacing: FFSpacing.md) {
-            HStack {
-                Text("Watched Movies")
-                    .font(FFTypography.headlineSmall)
+            Text("My Movies")
+                .font(FFTypography.headlineSmall)
+                .foregroundColor(FFColors.textPrimary)
+                .padding(.horizontal)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: FFSpacing.md) {
+                profileHubCard(icon: "book.closed.fill", title: "Diary", count: seenMoviesService.diary.count, color: FFColors.goldPrimary) {
+                    showDiary = true
+                }
+                profileHubCard(icon: "eye.fill", title: "Watched", count: seenMoviesService.count, color: FFColors.success) {
+                    showWatchedMovies = true
+                }
+                profileHubCard(icon: "bookmark.fill", title: "Watchlist", count: seenMoviesService.watchlist.count, color: FFColors.ruby) {
+                    showWatchlist = true
+                }
+                profileHubCard(icon: "star.fill", title: "Ratings", count: seenMoviesService.ratings.count, color: FFColors.goldLight) {
+                    showRatings = true
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    private func profileHubCard(icon: String, title: String, count: Int, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: FFSpacing.sm) {
+                Image(systemName: icon)
+                    .font(.system(size: 24))
+                    .foregroundColor(color)
+
+                Text("\(count)")
+                    .font(FFTypography.titleMedium)
                     .foregroundColor(FFColors.textPrimary)
 
-                Spacer()
-
-                Button {
-                    showWatchedMovies = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("Manage")
-                            .font(FFTypography.labelSmall)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .foregroundColor(FFColors.goldPrimary)
-                }
+                Text(title)
+                    .font(FFTypography.caption)
+                    .foregroundColor(FFColors.textSecondary)
             }
-            .padding(.horizontal)
-
-            GlassCard {
-                HStack(spacing: FFSpacing.md) {
-                    Image(systemName: "eye.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(FFColors.goldPrimary)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(seenMoviesService.count) movies tracked")
-                            .font(FFTypography.titleSmall)
-                            .foregroundColor(FFColors.textPrimary)
-                        Text("Used in Movie Night to skip films you've seen")
-                            .font(FFTypography.caption)
-                            .foregroundColor(FFColors.textTertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, FFSpacing.lg)
+            .background {
+                RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                    .fill(FFColors.backgroundElevated.opacity(0.6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
                     }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(FFColors.textTertiary)
-                }
             }
-            .padding(.horizontal)
-            .onTapGesture { showWatchedMovies = true }
         }
+        .buttonStyle(.plain)
     }
 
     private var settingsSection: some View {

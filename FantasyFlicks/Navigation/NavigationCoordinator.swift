@@ -27,8 +27,8 @@ final class NavigationCoordinator: ObservableObject {
     /// Whether to show join league sheet
     @Published var showJoinLeague = false
 
-    /// Whether to show Movie Night flow
-    @Published var showMovieNight = false
+    /// Session ID to auto-resume when Movie Night tab opens
+    @Published var pendingResumeSessionId: String?
 
     // MARK: - Initialization
 
@@ -61,9 +61,15 @@ final class NavigationCoordinator: ObservableObject {
         }
     }
 
-    /// Show Movie Night flow
+    /// Navigate to the Movie Night tab
     func showMovieNightFlow() {
-        showMovieNight = true
+        navigateTo(.movieNights)
+    }
+
+    /// Navigate to Movie Night tab and auto-resume a specific session
+    func resumeMovieNightSession(_ sessionId: String) {
+        pendingResumeSessionId = sessionId
+        navigateTo(.movieNights)
     }
 }
 

@@ -138,17 +138,13 @@ struct SwipeCardView<Content: View>: View {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 offset = CGSize(width: 600, height: translation.height * 0.5)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                onSwipe(.right)
-            }
+            onSwipe(.right)
         } else if horizontalAmount + velocityBoost < -swipeThreshold {
             // Swipe left — fly off screen
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 offset = CGSize(width: -600, height: translation.height * 0.5)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                onSwipe(.left)
-            }
+            onSwipe(.left)
         } else {
             // Spring back with bounce
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
@@ -277,22 +273,30 @@ struct MovieNightCardContent: View {
                     }
                 }
 
-                // Streaming providers
+                // Streaming providers (capped with "+N more")
                 if !providers.isEmpty {
+                    let visible = Array(providers.prefix(4))
+                    let hidden = providers.count - visible.count
                     HStack(spacing: FFSpacing.xs) {
-                        ForEach(providers.prefix(4)) { provider in
+                        ForEach(visible) { provider in
                             if let logoURL = provider.logoURL {
                                 CachedAsyncImage(url: logoURL) { image in
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
+                                    image.resizable().aspectRatio(contentMode: .fit)
                                 } placeholder: {
-                                    Circle()
+                                    RoundedRectangle(cornerRadius: 5)
                                         .fill(FFColors.backgroundElevated2)
                                 }
                                 .frame(width: 22, height: 22)
                                 .clipShape(RoundedRectangle(cornerRadius: 5))
                             }
+                        }
+                        if hidden > 0 {
+                            Text("+\(hidden)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(FFColors.textSecondary)
+                                .frame(width: 22, height: 22)
+                                .background(FFColors.backgroundElevated2)
+                                .clipShape(RoundedRectangle(cornerRadius: 5))
                         }
                     }
                 }

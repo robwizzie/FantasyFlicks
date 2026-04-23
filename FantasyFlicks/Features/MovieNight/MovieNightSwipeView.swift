@@ -206,14 +206,7 @@ struct MovieNightSwipeView: View {
     // MARK: - Loading / Waiting States
 
     private var loadingView: some View {
-        VStack(spacing: FFSpacing.xl) {
-            ProgressView()
-                .scaleEffect(1.5)
-                .tint(FFColors.goldPrimary)
-            Text("Building your deck...")
-                .font(FFTypography.titleMedium)
-                .foregroundColor(FFColors.textSecondary)
-        }
+        FullScreenLoadingView(message: "Building your deck…")
     }
 
     private var waitingView: some View {

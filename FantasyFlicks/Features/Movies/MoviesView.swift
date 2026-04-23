@@ -275,6 +275,11 @@ struct MoviesView: View {
 
 struct MovieDetailView: View {
     let movie: FFMovie
+    @StateObject private var seenService = SeenMoviesService.shared
+    @State private var showReviewSheet = false
+
+    private var isSeen: Bool { seenService.isSeen(tmdbId: movie.tmdbId) }
+    private var isOnWatchlist: Bool { seenService.isOnWatchlist(tmdbId: movie.tmdbId) }
 
     var body: some View {
         ZStack {
@@ -356,6 +361,61 @@ struct MovieDetailView: View {
                         }
                         .padding(.horizontal)
 
+                        // Action tiles — three equal-width buttons
+                        VStack(spacing: FFSpacing.md) {
+                            HStack(spacing: FFSpacing.sm) {
+                                actionTile(
+                                    icon: isSeen ? "eye.fill" : "eye",
+                                    label: isSeen ? "Watched" : "Watch",
+                                    isActive: isSeen
+                                ) {
+                                    seenService.toggleSeen(tmdbId: movie.tmdbId)
+                                }
+
+                                actionTile(
+                                    icon: isOnWatchlist ? "bookmark.fill" : "bookmark",
+                                    label: "Watchlist",
+                                    isActive: isOnWatchlist
+                                ) {
+                                    seenService.toggleWatchlist(tmdbId: movie.tmdbId)
+                                }
+
+                                actionTile(
+                                    icon: "square.and.pencil",
+                                    label: "Log",
+                                    isActive: false
+                                ) {
+                                    showReviewSheet = true
+                                }
+                            }
+
+                            // Star rating row (shown when watched)
+                            if isSeen {
+                                VStack(spacing: FFSpacing.xs) {
+                                    Text("Your Rating")
+                                        .font(FFTypography.labelSmall)
+                                        .foregroundColor(FFColors.textTertiary)
+                                    StarRatingView(tmdbId: movie.tmdbId, compact: false)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, FFSpacing.sm)
+                                .background {
+                                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                                        .fill(FFColors.goldPrimary.opacity(0.08))
+                                        .overlay {
+                                            RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                                                .stroke(FFColors.goldPrimary.opacity(0.2), lineWidth: 1)
+                                        }
+                                }
+                                .transition(.scale(scale: 0.95).combined(with: .opacity))
+                            }
+                        }
+                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isSeen)
+                        .padding(.horizontal)
+                        .sheet(isPresented: $showReviewSheet) {
+                            ReviewSheet(movie: movie)
+                        }
+
                         // Overview
                         VStack(alignment: .leading, spacing: FFSpacing.sm) {
                             Text("Overview")
@@ -434,6 +494,35 @@ struct MovieDetailView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func actionTile(icon: String, label: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(isActive ? FFColors.goldPrimary : FFColors.textSecondary)
+                Text(label)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(isActive ? FFColors.goldPrimary : FFColors.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, FFSpacing.md)
+            .background {
+                RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                    .fill(isActive ? FFColors.goldPrimary.opacity(0.12) : FFColors.backgroundElevated.opacity(0.6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                            .stroke(
+                                isActive ? FFColors.goldPrimary.opacity(0.35) : Color.white.opacity(0.08),
+                                lineWidth: 1
+                            )
+                    }
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -2,7 +2,7 @@
 //  MovieNightResultsView.swift
 //  FantasyFlicks
 //
-//  Results dashboard showing match scores after everyone finishes swiping
+//  Celebratory results with inline-expandable rows and per-user breakdown
 //
 
 import SwiftUI
@@ -12,65 +12,60 @@ struct MovieNightResultsView: View {
     @State private var sortOption: MovieNightSortOption = .matchScore
     @State private var sortAscending = false
     @State private var expandedResultId: Int?
+    @State private var revealWinner = false
 
     private var sortedResults: [MovieNightResult] {
         let results = viewModel.results
-        let sorted: [MovieNightResult]
         switch sortOption {
         case .matchScore:
-            sorted = results.sorted {
+            return results.sorted {
                 if $0.matchScore != $1.matchScore {
                     return sortAscending ? $0.matchScore < $1.matchScore : $0.matchScore > $1.matchScore
                 }
                 return $0.movie.voteAverage > $1.movie.voteAverage
             }
         case .rating:
-            sorted = results.sorted {
+            return results.sorted {
                 sortAscending ? $0.movie.voteAverage < $1.movie.voteAverage : $0.movie.voteAverage > $1.movie.voteAverage
             }
         case .title:
-            sorted = results.sorted {
+            return results.sorted {
                 sortAscending ? $0.movie.title < $1.movie.title : $0.movie.title > $1.movie.title
             }
         case .year:
-            sorted = results.sorted {
+            return results.sorted {
                 let y0 = $0.movie.year ?? 0
                 let y1 = $1.movie.year ?? 0
                 return sortAscending ? y0 < y1 : y0 > y1
             }
         }
-        return sorted
     }
 
     var body: some View {
         ZStack {
-            FFColors.backgroundDark.ignoresSafeArea()
+            backgroundView
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: FFSpacing.xl) {
-                    // Header
-                    resultsHeader
+                LazyVStack(spacing: FFSpacing.xxl, pinnedViews: []) {
+                    celebratoryHeader
 
-                    // Top pick hero
-                    if let topResult = viewModel.results.first {
-                        topPickSection(result: topResult)
+                    if let top = viewModel.results.first {
+                        winnerCard(result: top)
                     }
 
-                    // Sort controls (host gets full controls, others get display)
-                    sortControls
+                    if let session = viewModel.session, session.participantCount > 1 {
+                        perUserSection
+                    }
 
-                    // Full ranked list
                     rankedListSection
 
-                    // Action buttons
                     actionButtons
 
                     Spacer(minLength: 100)
                 }
-                .padding(.top, FFSpacing.lg)
+                .padding(.top, FFSpacing.md)
             }
 
-            // Celebration overlay
             if viewModel.showCelebration, let movie = viewModel.celebrationMovie {
                 MatchCelebrationView(
                     movieTitle: movie.title,
@@ -83,443 +78,585 @@ struct MovieNightResultsView: View {
         }
         .navigationTitle("Results")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.25)) {
+                revealWinner = true
+            }
+        }
+    }
+
+    // MARK: - Background
+
+    private var backgroundView: some View {
+        ZStack {
+            FFColors.backgroundDark.ignoresSafeArea()
+            VStack {
+                EllipticalGradient(
+                    colors: [
+                        FFColors.goldPrimary.opacity(0.22),
+                        FFColors.ruby.opacity(0.08),
+                        Color.clear
+                    ],
+                    center: .top,
+                    startRadiusFraction: 0,
+                    endRadiusFraction: 0.6
+                )
+                .frame(height: 520)
+                .blur(radius: 60)
+                Spacer()
+            }
+            .ignoresSafeArea()
+        }
     }
 
     // MARK: - Header
 
-    private var resultsHeader: some View {
+    private var celebratoryHeader: some View {
         VStack(spacing: FFSpacing.md) {
-            Image(systemName: "trophy.fill")
-                .font(.system(size: 44))
-                .foregroundStyle(FFColors.goldGradient)
+            ZStack {
+                Circle()
+                    .fill(FFColors.goldPrimary.opacity(0.18))
+                    .frame(width: 96, height: 96)
+                    .blur(radius: 18)
 
-            if let topResult = viewModel.results.first, topResult.isUnanimous {
-                Text("Perfect Match!")
-                    .font(FFTypography.displaySmall)
-                    .foregroundColor(FFColors.textPrimary)
-            } else if let topResult = viewModel.results.first, topResult.matchScore > 0.5 {
-                Text("Top Picks Found!")
-                    .font(FFTypography.displaySmall)
-                    .foregroundColor(FFColors.textPrimary)
-            } else {
-                Text("Here's What Came Closest")
-                    .font(FFTypography.headlineLarge)
-                    .foregroundColor(FFColors.textPrimary)
+                Image(systemName: headerIcon)
+                    .font(.system(size: 48))
+                    .foregroundStyle(FFColors.goldGradient)
+                    .scaleEffect(revealWinner ? 1.0 : 0.5)
+                    .opacity(revealWinner ? 1.0 : 0.0)
             }
 
+            Text(headerTitle)
+                .font(FFTypography.displaySmall)
+                .foregroundColor(FFColors.textPrimary)
+                .multilineTextAlignment(.center)
+                .opacity(revealWinner ? 1.0 : 0.0)
+
             if let session = viewModel.session {
-                Text(session.participantCount == 1
-                     ? "You swiped on \(viewModel.deckMovies.count) movies"
-                     : "\(session.participantCount) people swiped on \(viewModel.deckMovies.count) movies")
+                Text(headerSubtitle(session: session))
                     .font(FFTypography.bodyMedium)
                     .foregroundColor(FFColors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .opacity(revealWinner ? 1.0 : 0.0)
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, FFSpacing.xl)
     }
 
-    // MARK: - Top Pick
+    private var headerIcon: String {
+        guard let top = viewModel.results.first else { return "popcorn.fill" }
+        if top.isUnanimous { return "sparkles" }
+        if top.matchScore > 0.5 { return "trophy.fill" }
+        return "film.fill"
+    }
 
-    private func topPickSection(result: MovieNightResult) -> some View {
-        VStack(spacing: FFSpacing.md) {
-            ZStack(alignment: .bottom) {
-                if let posterURL = result.movie.posterURL {
-                    CachedAsyncImage(url: posterURL) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        FFColors.backgroundElevated
-                    }
-                    .frame(height: 280)
-                    .clipped()
-                }
+    private var headerTitle: String {
+        guard let top = viewModel.results.first else { return "No Results" }
+        if top.isUnanimous { return "Perfect Match!" }
+        if top.matchScore > 0.5 { return "You've Got a Winner!" }
+        return "Here's What Came Closest"
+    }
 
-                LinearGradient(
-                    colors: [.clear, FFColors.backgroundDark.opacity(0.9)],
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
-
-                VStack(spacing: FFSpacing.sm) {
-                    if result.isUnanimous {
-                        Badge(text: "Everyone Agrees!", style: .gold)
-                    } else {
-                        Badge(text: "\(result.matchPercentage)% Match", style: .gold)
-                    }
-
-                    Text(result.movie.title)
-                        .font(FFTypography.headlineLarge)
-                        .foregroundColor(FFColors.textPrimary)
-                        .multilineTextAlignment(.center)
-
-                    HStack(spacing: FFSpacing.md) {
-                        if let year = result.movie.year {
-                            Text(String(year))
-                                .foregroundColor(FFColors.textSecondary)
-                        }
-                        if result.movie.voteAverage > 0 {
-                            HStack(spacing: 4) {
-                                Image(systemName: "star.fill")
-                                    .foregroundColor(FFColors.goldPrimary)
-                                Text(String(format: "%.1f", result.movie.voteAverage))
-                                    .foregroundColor(FFColors.goldLight)
-                            }
-                        }
-                    }
-                    .font(FFTypography.labelMedium)
-
-                    // Who swiped right on this movie
-                    whoSwipedSection(result: result)
-
-                    if !result.streamingProviders.isEmpty {
-                        HStack(spacing: FFSpacing.sm) {
-                            ForEach(result.streamingProviders.prefix(4)) { provider in
-                                if let logoURL = provider.logoURL {
-                                    CachedAsyncImage(url: logoURL) { image in
-                                        image.resizable().aspectRatio(contentMode: .fit)
-                                    } placeholder: {
-                                        Circle().fill(FFColors.backgroundElevated2)
-                                    }
-                                    .frame(width: 28, height: 28)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                }
-                            }
-                        }
-                    }
-                }
-                .padding(FFSpacing.lg)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.xxl))
-            .overlay {
-                RoundedRectangle(cornerRadius: FFCornerRadius.xxl)
-                    .stroke(
-                        result.isUnanimous
-                            ? FFColors.goldGradient
-                            : LinearGradient(colors: [Color.white.opacity(0.2)], startPoint: .top, endPoint: .bottom),
-                        lineWidth: result.isUnanimous ? 2 : 1
-                    )
-            }
-            .shadow(
-                color: result.isUnanimous ? FFColors.goldPrimary.opacity(0.3) : .clear,
-                radius: 20, x: 0, y: 0
-            )
-            .padding(.horizontal)
+    private func headerSubtitle(session: MovieNightSession) -> String {
+        let deckCount = viewModel.deckMovies.count
+        if session.participantCount == 1 {
+            return "You swiped on \(deckCount) movie\(deckCount == 1 ? "" : "s")"
         }
+        return "\(session.participantCount) people • \(deckCount) movies"
     }
 
-    // MARK: - Who Swiped Section
+    // MARK: - Winner Card
 
-    private func whoSwipedSection(result: MovieNightResult) -> some View {
-        HStack(spacing: FFSpacing.xs) {
-            if let session = viewModel.session {
-                ForEach(session.participantIds, id: \.self) { userId in
-                    let swipedRight = result.swipedRightBy.contains(userId)
-                    let name = session.participantNames[userId] ?? "?"
+    private func winnerCard(result: MovieNightResult) -> some View {
+        VStack(spacing: FFSpacing.lg) {
+            // Winner badge
+            HStack(spacing: FFSpacing.xs) {
+                Image(systemName: result.isUnanimous ? "sparkles" : "crown.fill")
+                    .font(.system(size: 11))
+                Text(result.isUnanimous ? "UNANIMOUS" : "TOP PICK")
+                    .font(.system(size: 11, weight: .black, design: .rounded))
+                    .tracking(1.5)
+            }
+            .foregroundColor(FFColors.backgroundDark)
+            .padding(.horizontal, FFSpacing.md)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(FFColors.goldGradient))
 
+            // Poster
+            if let posterURL = result.movie.posterURL {
+                CachedAsyncImage(url: posterURL) { image in
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.xl)
+                        .fill(FFColors.backgroundElevated)
+                        .aspectRatio(2/3, contentMode: .fit)
+                }
+                .frame(maxHeight: 320)
+                .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.xl))
+                .overlay {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.xl)
+                        .stroke(
+                            result.isUnanimous ? FFColors.goldGradient : LinearGradient(colors: [Color.white.opacity(0.2)], startPoint: .top, endPoint: .bottom),
+                            lineWidth: result.isUnanimous ? 3 : 1
+                        )
+                }
+                .shadow(color: FFColors.goldPrimary.opacity(result.isUnanimous ? 0.55 : 0.25),
+                        radius: 30, x: 0, y: 12)
+                .scaleEffect(revealWinner ? 1.0 : 0.75)
+                .opacity(revealWinner ? 1.0 : 0.0)
+            }
+
+            // Title
+            Text(result.movie.title)
+                .font(FFTypography.headlineLarge)
+                .foregroundColor(FFColors.textPrimary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, FFSpacing.lg)
+
+            // Metadata
+            HStack(spacing: FFSpacing.md) {
+                if let year = result.movie.year {
+                    Text(String(year))
+                        .foregroundColor(FFColors.textSecondary)
+                }
+
+                if result.movie.voteAverage > 0 {
                     HStack(spacing: 3) {
-                        Image(systemName: swipedRight ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
-                            .font(.system(size: 9))
-                        Text(String(name.prefix(8)))
-                            .font(.system(size: 10, weight: .medium))
+                        Image(systemName: "star.fill")
+                            .foregroundColor(FFColors.goldPrimary)
+                            .font(.system(size: 11))
+                        Text(String(format: "%.1f", result.movie.voteAverage))
+                            .foregroundColor(FFColors.goldLight)
                     }
-                    .foregroundColor(swipedRight ? FFColors.goldPrimary : FFColors.textTertiary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(
-                        (swipedRight ? FFColors.goldPrimary : FFColors.textTertiary).opacity(0.15)
-                    )
-                    .clipShape(Capsule())
                 }
+
+                if let runtime = result.movie.formattedRuntime {
+                    Text(runtime)
+                        .foregroundColor(FFColors.textTertiary)
+                }
+            }
+            .font(FFTypography.labelMedium)
+
+            // Match percentage
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\(result.matchPercentage)%")
+                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .foregroundStyle(FFColors.goldGradient)
+                Text("match")
+                    .font(FFTypography.labelMedium)
+                    .foregroundColor(FFColors.textSecondary)
+            }
+
+            // Streaming providers (capped with "+N more")
+            if !result.streamingProviders.isEmpty {
+                streamingRow(providers: result.streamingProviders, size: 28, max: 5)
+            }
+        }
+        .padding(.horizontal, FFSpacing.lg)
+    }
+
+    // MARK: - Per User Section
+
+    private var perUserSection: some View {
+        VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack(spacing: FFSpacing.sm) {
+                Image(systemName: "person.3.fill")
+                    .foregroundColor(FFColors.goldPrimary)
+                Text("Who Voted for What")
+                    .font(FFTypography.headlineSmall)
+                    .foregroundColor(FFColors.textPrimary)
+            }
+            .padding(.horizontal)
+
+            if let session = viewModel.session {
+                VStack(spacing: FFSpacing.md) {
+                    ForEach(session.participantIds, id: \.self) { userId in
+                        perUserRow(userId: userId, session: session)
+                    }
+                }
+                .padding(.horizontal)
             }
         }
     }
 
-    // MARK: - Sort Controls
+    private func perUserRow(userId: String, session: MovieNightSession) -> some View {
+        let userName = session.participantNames[userId] ?? "Player"
+        let userSwipes = viewModel.allSwipes.filter { $0.userId == userId }
+        let yesCount = userSwipes.filter { $0.wantToWatch }.count
+        let noCount = userSwipes.filter { !$0.wantToWatch }.count
+        let topPicks = Array(viewModel.results
+            .filter { $0.swipedRightBy.contains(userId) }
+            .sorted { $0.matchScore > $1.matchScore }
+            .prefix(4))
 
-    private var sortControls: some View {
-        HStack(spacing: FFSpacing.sm) {
-            Text("Sort by")
-                .font(FFTypography.labelSmall)
-                .foregroundColor(FFColors.textTertiary)
+        return VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack(spacing: FFSpacing.sm) {
+                ZStack {
+                    Circle()
+                        .fill(FFColors.goldPrimary.opacity(0.2))
+                        .frame(width: 40, height: 40)
+                    Text(String(userName.prefix(1)).uppercased())
+                        .font(FFTypography.labelLarge)
+                        .foregroundColor(FFColors.goldPrimary)
+                }
 
-            Menu {
-                ForEach(MovieNightSortOption.allCases) { option in
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            if sortOption == option {
-                                sortAscending.toggle()
-                            } else {
-                                sortOption = option
-                                sortAscending = false
-                            }
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(userName)
+                            .font(FFTypography.labelLarge)
+                            .foregroundColor(FFColors.textPrimary)
+                        if userId == session.hostId {
+                            Image(systemName: "crown.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(FFColors.goldPrimary)
                         }
-                    } label: {
-                        HStack {
-                            Text(option.rawValue)
-                            if sortOption == option {
-                                Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
-                            }
+                    }
+                    HStack(spacing: FFSpacing.xs) {
+                        Label("\(yesCount)", systemImage: "hand.thumbsup.fill")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(FFColors.success)
+                        Text("·").foregroundColor(FFColors.textTertiary)
+                        Label("\(noCount)", systemImage: "hand.thumbsdown.fill")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(FFColors.ruby)
+                    }
+                }
+
+                Spacer()
+            }
+
+            if !topPicks.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: FFSpacing.sm) {
+                        ForEach(topPicks, id: \.id) { result in
+                            miniPoster(result: result)
                         }
                     }
                 }
-            } label: {
-                HStack(spacing: 4) {
-                    Text(sortOption.rawValue)
-                        .font(FFTypography.labelMedium)
-                    Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundColor(FFColors.goldPrimary)
-                .padding(.horizontal, FFSpacing.md)
-                .padding(.vertical, FFSpacing.xs)
-                .background(FFColors.goldPrimary.opacity(0.12))
-                .clipShape(Capsule())
+            } else {
+                Text("Didn't pick any movies")
+                    .font(FFTypography.caption)
+                    .foregroundColor(FFColors.textTertiary)
+                    .italic()
             }
-
-            Spacer()
         }
-        .padding(.horizontal)
+        .padding(FFSpacing.md)
+        .background {
+            RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                .fill(FFColors.backgroundElevated.opacity(0.55))
+                .overlay {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                }
+        }
+    }
+
+    private func miniPoster(result: MovieNightResult) -> some View {
+        VStack(spacing: 4) {
+            if let posterURL = result.movie.posterURL {
+                CachedAsyncImage(url: posterURL) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    FFColors.backgroundElevated
+                }
+                .frame(width: 56, height: 84)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            Text(result.movie.title)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(FFColors.textSecondary)
+                .lineLimit(1)
+                .frame(width: 56)
+        }
     }
 
     // MARK: - Ranked List
 
     private var rankedListSection: some View {
-        VStack(alignment: .leading, spacing: FFSpacing.sm) {
-            Text("All Results")
-                .font(FFTypography.headlineSmall)
-                .foregroundColor(FFColors.textPrimary)
-                .padding(.horizontal)
+        VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack {
+                HStack(spacing: FFSpacing.sm) {
+                    Image(systemName: "list.star")
+                        .foregroundColor(FFColors.goldPrimary)
+                    Text("All Picks")
+                        .font(FFTypography.headlineSmall)
+                        .foregroundColor(FFColors.textPrimary)
+                }
 
-            ForEach(Array(sortedResults.enumerated()), id: \.element.id) { index, result in
-                resultRow(result: result, rank: index + 1)
+                Spacer()
+
+                sortMenu
             }
+            .padding(.horizontal)
+
+            VStack(spacing: FFSpacing.sm) {
+                ForEach(Array(sortedResults.enumerated()), id: \.element.id) { index, result in
+                    expandableRow(result: result, rank: index + 1)
+                }
+            }
+            .padding(.horizontal)
         }
     }
 
-    private func resultRow(result: MovieNightResult, rank: Int) -> some View {
-        let isExpanded = expandedResultId == result.id
-
-        return Button {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                expandedResultId = isExpanded ? nil : result.id
+    private var sortMenu: some View {
+        Menu {
+            ForEach(MovieNightSortOption.allCases) { option in
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        if sortOption == option {
+                            sortAscending.toggle()
+                        } else {
+                            sortOption = option
+                            sortAscending = false
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text(option.rawValue)
+                        if sortOption == option {
+                            Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
+                        }
+                    }
+                }
             }
         } label: {
-            VStack(spacing: 0) {
-                // Main row
+            HStack(spacing: 4) {
+                Text(sortOption.rawValue)
+                    .font(FFTypography.labelSmall)
+                Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .foregroundColor(FFColors.goldPrimary)
+            .padding(.horizontal, FFSpacing.sm)
+            .padding(.vertical, 4)
+            .background(FFColors.goldPrimary.opacity(0.12))
+            .clipShape(Capsule())
+        }
+    }
+
+    // MARK: - Expandable Row (inline)
+
+    private func expandableRow(result: MovieNightResult, rank: Int) -> some View {
+        let isExpanded = expandedResultId == result.id
+
+        return VStack(spacing: 0) {
+            // Collapsed summary — tappable to expand
+            Button {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    expandedResultId = isExpanded ? nil : result.id
+                }
+            } label: {
                 HStack(spacing: FFSpacing.sm) {
                     // Rank
                     Text("\(rank)")
-                        .font(FFTypography.statSmall)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(rank <= 3 ? FFColors.goldPrimary : FFColors.textTertiary)
                         .frame(width: 24)
 
-                    // Poster thumbnail
+                    // Poster
                     if let posterURL = result.movie.posterURL {
                         CachedAsyncImage(url: posterURL) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            FFColors.backgroundElevated
-                        }
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } placeholder: { FFColors.backgroundElevated }
                         .frame(width: 44, height: 66)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
 
-                    // Info
-                    VStack(alignment: .leading, spacing: FFSpacing.xs) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(result.movie.title)
                             .font(FFTypography.labelMedium)
                             .foregroundColor(FFColors.textPrimary)
                             .lineLimit(1)
 
-                        // Match bar
                         HStack(spacing: FFSpacing.sm) {
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule()
-                                        .fill(FFColors.backgroundElevated2)
-                                        .frame(height: 5)
-                                    Capsule()
-                                        .fill(matchBarColor(score: result.matchScore))
-                                        .frame(width: geo.size.width * result.matchScore, height: 5)
-                                }
+                            HStack(spacing: 3) {
+                                Image(systemName: "heart.fill")
+                                    .font(.system(size: 9))
+                                Text("\(result.matchPercentage)%")
+                                    .font(.system(size: 11, weight: .semibold))
                             }
-                            .frame(height: 5)
+                            .foregroundColor(matchColor(score: result.matchScore))
 
-                            Text("\(result.matchPercentage)%")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(FFColors.goldPrimary)
-                                .frame(width: 32, alignment: .trailing)
-                        }
-
-                        // Compact who-swiped indicators
-                        HStack(spacing: 3) {
-                            if let session = viewModel.session {
-                                ForEach(session.participantIds, id: \.self) { userId in
-                                    let swipedRight = result.swipedRightBy.contains(userId)
-                                    Circle()
-                                        .fill(swipedRight ? FFColors.goldPrimary : FFColors.backgroundElevated2)
-                                        .frame(width: 14, height: 14)
-                                        .overlay {
-                                            Image(systemName: swipedRight ? "checkmark" : "xmark")
-                                                .font(.system(size: 7, weight: .bold))
-                                                .foregroundColor(swipedRight ? FFColors.backgroundDark : FFColors.textTertiary)
-                                        }
-                                }
-                            }
-
-                            if !result.streamingProviders.isEmpty {
-                                Spacer()
-                                HStack(spacing: 3) {
-                                    ForEach(result.streamingProviders.prefix(3)) { provider in
-                                        if let logoURL = provider.logoURL {
-                                            CachedAsyncImage(url: logoURL) { image in
-                                                image.resizable().aspectRatio(contentMode: .fit)
-                                            } placeholder: {
-                                                Circle().fill(FFColors.backgroundElevated2)
-                                            }
-                                            .frame(width: 16, height: 16)
-                                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(FFColors.textTertiary)
-                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                }
-
-                // Expanded detail - who picked what
-                if isExpanded {
-                    VStack(alignment: .leading, spacing: FFSpacing.sm) {
-                        Divider()
-                            .background(Color.white.opacity(0.1))
-                            .padding(.vertical, FFSpacing.xs)
-
-                        if let session = viewModel.session {
-                            ForEach(session.participantIds, id: \.self) { userId in
-                                let swipedRight = result.swipedRightBy.contains(userId)
-                                let hasSeen = result.seenBy.contains(userId)
-                                let name = session.participantNames[userId] ?? "Player"
-
-                                HStack(spacing: FFSpacing.sm) {
-                                    Circle()
-                                        .fill(FFColors.goldPrimary.opacity(0.2))
-                                        .frame(width: 28, height: 28)
-                                        .overlay {
-                                            Text(String(name.prefix(1)).uppercased())
-                                                .font(.system(size: 12, weight: .semibold))
-                                                .foregroundColor(FFColors.goldPrimary)
-                                        }
-
-                                    Text(name)
-                                        .font(FFTypography.labelMedium)
-                                        .foregroundColor(FFColors.textPrimary)
-
-                                    Spacer()
-
-                                    if hasSeen {
-                                        HStack(spacing: 3) {
-                                            Image(systemName: "eye.fill")
-                                                .font(.system(size: 10))
-                                            Text("Seen")
-                                                .font(.system(size: 10, weight: .medium))
-                                        }
-                                        .foregroundColor(FFColors.textTertiary)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(FFColors.backgroundElevated2)
-                                        .clipShape(Capsule())
-                                    }
-
-                                    HStack(spacing: 3) {
-                                        Image(systemName: swipedRight ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
-                                            .font(.system(size: 12))
-                                        Text(swipedRight ? "Watch" : "Skip")
-                                            .font(FFTypography.labelSmall)
-                                    }
-                                    .foregroundColor(swipedRight ? FFColors.success : FFColors.ruby)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(
-                                        (swipedRight ? FFColors.success : FFColors.ruby).opacity(0.12)
-                                    )
-                                    .clipShape(Capsule())
-                                }
-                            }
-                        }
-
-                        // Movie meta
-                        HStack(spacing: FFSpacing.md) {
                             if let year = result.movie.year {
                                 Text(String(year))
                                     .font(FFTypography.caption)
                                     .foregroundColor(FFColors.textTertiary)
                             }
+
                             if result.movie.voteAverage > 0 {
-                                HStack(spacing: 3) {
+                                HStack(spacing: 2) {
                                     Image(systemName: "star.fill")
-                                        .font(.system(size: 9))
-                                        .foregroundColor(FFColors.goldPrimary)
+                                        .font(.system(size: 8))
                                     Text(String(format: "%.1f", result.movie.voteAverage))
                                         .font(FFTypography.caption)
-                                        .foregroundColor(FFColors.goldLight)
                                 }
+                                .foregroundColor(FFColors.goldLight)
                             }
-                            if let runtime = result.movie.formattedRuntime {
-                                Text(runtime)
-                                    .font(FFTypography.caption)
-                                    .foregroundColor(FFColors.textTertiary)
-                            }
-                        }
-
-                        if !result.movie.overview.isEmpty {
-                            Text(result.movie.overview)
-                                .font(FFTypography.caption)
-                                .foregroundColor(FFColors.textSecondary)
-                                .lineLimit(3)
                         }
                     }
-                    .padding(.top, FFSpacing.xs)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+
+                    Spacer()
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(FFColors.textTertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
+                .padding(FFSpacing.md)
+                .contentShape(Rectangle())
             }
-            .padding(FFSpacing.sm)
-            .background {
-                RoundedRectangle(cornerRadius: FFCornerRadius.medium)
-                    .fill(FFColors.backgroundElevated.opacity(0.5))
-            }
-            .overlay {
-                if result.isUnanimous {
-                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
-                        .stroke(FFColors.goldPrimary.opacity(0.4), lineWidth: 1)
+            .buttonStyle(.plain)
+
+            // Expanded content
+            if isExpanded {
+                VStack(alignment: .leading, spacing: FFSpacing.md) {
+                    Divider().background(Color.white.opacity(0.1))
+
+                    // Per-user votes
+                    if let session = viewModel.session {
+                        VStack(alignment: .leading, spacing: FFSpacing.xs) {
+                            Text("Votes")
+                                .font(FFTypography.labelSmall)
+                                .foregroundColor(FFColors.textTertiary)
+
+                            VStack(spacing: 6) {
+                                ForEach(session.participantIds, id: \.self) { userId in
+                                    voteRow(userId: userId, session: session, result: result)
+                                }
+                            }
+                        }
+                    }
+
+                    // Overview
+                    if !result.movie.overview.isEmpty {
+                        VStack(alignment: .leading, spacing: FFSpacing.xs) {
+                            Text("Overview")
+                                .font(FFTypography.labelSmall)
+                                .foregroundColor(FFColors.textTertiary)
+                            Text(result.movie.overview)
+                                .font(FFTypography.bodySmall)
+                                .foregroundColor(FFColors.textSecondary)
+                                .lineLimit(5)
+                        }
+                    }
+
+                    // Streaming providers (with overflow cap)
+                    if !result.streamingProviders.isEmpty {
+                        VStack(alignment: .leading, spacing: FFSpacing.xs) {
+                            Text("Available On")
+                                .font(FFTypography.labelSmall)
+                                .foregroundColor(FFColors.textTertiary)
+                            streamingRow(providers: result.streamingProviders, size: 32, max: 6)
+                        }
+                    }
                 }
+                .padding(.horizontal, FFSpacing.md)
+                .padding(.bottom, FFSpacing.md)
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .move(edge: .top)),
+                    removal: .opacity
+                ))
             }
-            .padding(.horizontal)
         }
-        .buttonStyle(.plain)
+        .background {
+            RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                .fill(FFColors.backgroundElevated.opacity(0.45))
+                .overlay {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                        .stroke(
+                            result.isUnanimous ? FFColors.goldPrimary.opacity(0.5) : Color.white.opacity(0.06),
+                            lineWidth: result.isUnanimous ? 1 : 0.5
+                        )
+                }
+        }
     }
 
-    private func matchBarColor(score: Double) -> LinearGradient {
-        if score >= 1.0 {
-            return FFColors.goldGradientHorizontal
-        } else if score >= 0.5 {
-            return LinearGradient(colors: [FFColors.goldPrimary, FFColors.goldLight], startPoint: .leading, endPoint: .trailing)
-        } else {
-            return LinearGradient(colors: [FFColors.textTertiary], startPoint: .leading, endPoint: .trailing)
+    private func voteRow(userId: String, session: MovieNightSession, result: MovieNightResult) -> some View {
+        let didWatch = result.swipedRightBy.contains(userId)
+        let hasSeen = result.seenBy.contains(userId)
+        let name = session.participantNames[userId] ?? "Player"
+
+        return HStack(spacing: FFSpacing.sm) {
+            Circle()
+                .fill(FFColors.goldPrimary.opacity(0.2))
+                .frame(width: 24, height: 24)
+                .overlay {
+                    Text(String(name.prefix(1)).uppercased())
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(FFColors.goldPrimary)
+                }
+
+            Text(name)
+                .font(FFTypography.labelSmall)
+                .foregroundColor(FFColors.textPrimary)
+
+            if hasSeen {
+                Text("seen")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(FFColors.textTertiary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(FFColors.backgroundElevated2)
+                    .clipShape(Capsule())
+            }
+
+            Spacer()
+
+            HStack(spacing: 3) {
+                Image(systemName: didWatch ? "hand.thumbsup.fill" : "hand.thumbsdown.fill")
+                    .font(.system(size: 10))
+                Text(didWatch ? "Yes" : "Pass")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .foregroundColor(didWatch ? FFColors.success : FFColors.ruby)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background((didWatch ? FFColors.success : FFColors.ruby).opacity(0.12))
+            .clipShape(Capsule())
         }
+    }
+
+    // MARK: - Streaming Row (with overflow indicator)
+
+    private func streamingRow(providers: [WatchProvider], size: CGFloat, max maxShown: Int) -> some View {
+        let visible = Array(providers.prefix(maxShown))
+        let hidden = providers.count - visible.count
+
+        return HStack(spacing: FFSpacing.xs) {
+            ForEach(visible) { provider in
+                if let logoURL = provider.logoURL {
+                    CachedAsyncImage(url: logoURL) { image in
+                        image.resizable().aspectRatio(contentMode: .fit)
+                    } placeholder: {
+                        RoundedRectangle(cornerRadius: size * 0.18)
+                            .fill(FFColors.backgroundElevated2)
+                    }
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: size * 0.18))
+                }
+            }
+
+            if hidden > 0 {
+                Text("+\(hidden)")
+                    .font(.system(size: size * 0.38, weight: .bold))
+                    .foregroundColor(FFColors.textSecondary)
+                    .frame(width: size, height: size)
+                    .background(FFColors.backgroundElevated2)
+                    .clipShape(RoundedRectangle(cornerRadius: size * 0.18))
+            }
+        }
+    }
+
+    private func matchColor(score: Double) -> Color {
+        if score >= 1.0 { return FFColors.goldPrimary }
+        if score >= 0.5 { return FFColors.goldLight }
+        return FFColors.textTertiary
     }
 
     // MARK: - Action Buttons
 
     private var actionButtons: some View {
-        VStack(spacing: FFSpacing.md) {
+        VStack(spacing: FFSpacing.sm) {
             GoldButton(
                 title: "Play Again",
                 icon: "arrow.clockwise",
@@ -529,17 +666,7 @@ struct MovieNightResultsView: View {
             ) {
                 Task { await viewModel.playAgain() }
             }
-
-            GoldButton(
-                title: "Share Results",
-                icon: "square.and.arrow.up",
-                style: .secondary,
-                size: .medium,
-                fullWidth: true
-            ) {
-                // Share results
-            }
+            .padding(.horizontal)
         }
-        .padding(.horizontal)
     }
 }
