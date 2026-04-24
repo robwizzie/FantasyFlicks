@@ -11,12 +11,47 @@ struct DiaryView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var seenService = SeenMoviesService.shared
     @State private var selectedMovie: FFMovie?
+    @State private var searchText = ""
+    @State private var sortOption: SortOption = .dateDesc
+
+    enum SortOption: String, CaseIterable {
+        case dateDesc = "Newest first"
+        case dateAsc = "Oldest first"
+        case titleAsc = "Title (A–Z)"
+        case ratingDesc = "Highest rated"
+        case ratingAsc = "Lowest rated"
+    }
+
+    /// Filter by search text then sort. Grouping by month only applies for the
+    /// default date sort — other sorts return a single flat section.
+    private var filteredAndSorted: [DiaryEntry] {
+        let q = searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        let filtered = q.isEmpty ? seenService.diary : seenService.diary.filter {
+            $0.title.lowercased().contains(q) ||
+            ($0.reviewText?.lowercased().contains(q) ?? false)
+        }
+        switch sortOption {
+        case .dateDesc: return filtered.sorted { $0.watchedDate > $1.watchedDate }
+        case .dateAsc: return filtered.sorted { $0.watchedDate < $1.watchedDate }
+        case .titleAsc: return filtered.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case .ratingDesc: return filtered.sorted { ($0.effectiveRating ?? -1) > ($1.effectiveRating ?? -1) }
+        case .ratingAsc: return filtered.sorted { ($0.effectiveRating ?? 99) < ($1.effectiveRating ?? 99) }
+        }
+    }
 
     private var groupedEntries: [(String, [DiaryEntry])] {
+        let entries = filteredAndSorted
+        guard sortOption == .dateDesc || sortOption == .dateAsc else {
+            return [("Results", entries)]
+        }
         let formatter = DateFormatter()
         formatter.dateFormat = "MMMM yyyy"
-        let grouped = Dictionary(grouping: seenService.diary) { formatter.string(from: $0.watchedDate) }
-        return grouped.sorted { $0.value.first!.watchedDate > $1.value.first!.watchedDate }
+        let grouped = Dictionary(grouping: entries) { formatter.string(from: $0.watchedDate) }
+        return grouped.sorted { lhs, rhs in
+            let lhsDate = lhs.value.first!.watchedDate
+            let rhsDate = rhs.value.first!.watchedDate
+            return sortOption == .dateDesc ? lhsDate > rhsDate : lhsDate < rhsDate
+        }
     }
 
     var body: some View {
@@ -40,6 +75,15 @@ struct DiaryView: View {
                     .padding()
                 } else {
                     List {
+                        Section {
+                            EmptyView()
+                        } header: {
+                            sortBar
+                                .textCase(nil)
+                                .listRowInsets(EdgeInsets())
+                        }
+                        .listRowBackground(Color.clear)
+
                         ForEach(groupedEntries, id: \.0) { month, entries in
                             Section {
                                 ForEach(entries) { entry in
@@ -69,6 +113,7 @@ struct DiaryView: View {
             }
             .navigationTitle("Diary")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search titles or reviews")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
@@ -79,6 +124,39 @@ struct DiaryView: View {
                 NavigationStack { MovieDetailView(movie: movie) }
             }
         }
+    }
+
+    private var sortBar: some View {
+        HStack {
+            Text("\(filteredAndSorted.count) \(filteredAndSorted.count == 1 ? "entry" : "entries")")
+                .font(FFTypography.caption)
+                .foregroundColor(FFColors.textTertiary)
+            Spacer()
+            Menu {
+                ForEach(SortOption.allCases, id: \.self) { option in
+                    Button {
+                        sortOption = option
+                    } label: {
+                        HStack {
+                            Text(option.rawValue)
+                            if sortOption == option { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.arrow.down").font(.system(size: 10, weight: .bold))
+                    Text(sortOption.rawValue).font(FFTypography.labelSmall)
+                }
+                .foregroundColor(FFColors.goldPrimary)
+                .padding(.horizontal, FFSpacing.md)
+                .padding(.vertical, 6)
+                .background(FFColors.goldPrimary.opacity(0.12))
+                .clipShape(Capsule())
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, FFSpacing.sm)
     }
 
     private func openMovie(for entry: DiaryEntry) {

@@ -315,6 +315,15 @@ final class TMDBService {
         return !Set(genreIds).isDisjoint(with: Set(movieGenres))
     }
 
+    /// Fetch every poster TMDB has on file for a movie. Used by the favorites
+    /// editor so users can pick a different artwork for a pinned film.
+    func getMovieImages(id: Int) async throws -> TMDBImagesResponse {
+        guard let url = TMDBEndpoint.movieImages(id: id).url() else {
+            throw NetworkError.invalidURL
+        }
+        return try await networkManager.get(url: url)
+    }
+
     /// Fetch full movie with details and credits
     func getFullMovie(id: Int) async throws -> FFMovie {
         async let detailsTask = getMovieDetails(id: id)
@@ -495,5 +504,32 @@ struct TMDBReleaseDate: Codable, Sendable {
         case certification
         case releaseDate = "release_date"
         case type
+    }
+}
+
+// MARK: - Images Response
+
+struct TMDBImagesResponse: Codable, Sendable {
+    let id: Int
+    let posters: [TMDBImage]
+    let backdrops: [TMDBImage]
+}
+
+struct TMDBImage: Codable, Sendable, Identifiable {
+    let filePath: String
+    let width: Int
+    let height: Int
+    let voteAverage: Double?
+    let voteCount: Int?
+    let iso639_1: String?
+
+    var id: String { filePath }
+
+    enum CodingKeys: String, CodingKey {
+        case filePath = "file_path"
+        case width, height
+        case voteAverage = "vote_average"
+        case voteCount = "vote_count"
+        case iso639_1 = "iso_639_1"
     }
 }

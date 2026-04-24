@@ -16,6 +16,17 @@ struct WatchedMoviesSheet: View {
     @State private var searchResults: [FFMovie] = []
     @State private var isSearching = false
     @State private var selectedMovie: FFMovie?
+    @State private var listFilter = ""
+    @State private var sortOption: SortOption = .titleAsc
+
+    enum SortOption: String, CaseIterable {
+        case titleAsc = "Title (A–Z)"
+        case titleDesc = "Title (Z–A)"
+        case yearDesc = "Newest"
+        case yearAsc = "Oldest"
+        case ratingDesc = "My rating (high)"
+        case ratingAsc = "My rating (low)"
+    }
 
     /// Snapshot of the ordered list. Populated once in `.task` so metadata
     /// hydrating later doesn't reshuffle the list mid-scroll.
@@ -25,14 +36,63 @@ struct WatchedMoviesSheet: View {
         searchText.trimmingCharacters(in: .whitespaces).count >= 2
     }
 
-    /// Compute a stable ordering: alphabetical by cached title, then by tmdbId
-    /// as a stable tiebreaker so titles loading in don't cause rows to jump.
+    /// Compute a stable ordering based on the selected sort option. Fallback
+    /// tiebreaker is tmdbId so list rows don't jump as async metadata loads.
     private func computeOrdering() -> [Int] {
-        seenService.seenTmdbIds.sorted { a, b in
-            let t1 = seenService.cachedMovie(for: a)?.title ?? ""
-            let t2 = seenService.cachedMovie(for: b)?.title ?? ""
-            if t1 != t2 { return t1.localizedCaseInsensitiveCompare(t2) == .orderedAscending }
-            return a < b
+        let ids = Array(seenService.seenTmdbIds)
+        switch sortOption {
+        case .titleAsc:
+            return ids.sorted { a, b in
+                let t1 = seenService.cachedMovie(for: a)?.title ?? ""
+                let t2 = seenService.cachedMovie(for: b)?.title ?? ""
+                if t1 != t2 { return t1.localizedCaseInsensitiveCompare(t2) == .orderedAscending }
+                return a < b
+            }
+        case .titleDesc:
+            return ids.sorted { a, b in
+                let t1 = seenService.cachedMovie(for: a)?.title ?? ""
+                let t2 = seenService.cachedMovie(for: b)?.title ?? ""
+                if t1 != t2 { return t1.localizedCaseInsensitiveCompare(t2) == .orderedDescending }
+                return a > b
+            }
+        case .yearDesc:
+            return ids.sorted { a, b in
+                let y1 = seenService.cachedMovie(for: a)?.year ?? 0
+                let y2 = seenService.cachedMovie(for: b)?.year ?? 0
+                if y1 != y2 { return y1 > y2 }
+                return a < b
+            }
+        case .yearAsc:
+            return ids.sorted { a, b in
+                let y1 = seenService.cachedMovie(for: a)?.year ?? 9999
+                let y2 = seenService.cachedMovie(for: b)?.year ?? 9999
+                if y1 != y2 { return y1 < y2 }
+                return a < b
+            }
+        case .ratingDesc:
+            return ids.sorted { a, b in
+                let r1 = seenService.ratings[a] ?? -1
+                let r2 = seenService.ratings[b] ?? -1
+                if r1 != r2 { return r1 > r2 }
+                return a < b
+            }
+        case .ratingAsc:
+            return ids.sorted { a, b in
+                let r1 = seenService.ratings[a] ?? 99
+                let r2 = seenService.ratings[b] ?? 99
+                if r1 != r2 { return r1 < r2 }
+                return a < b
+            }
+        }
+    }
+
+    /// Filter the ordered list by the in-list search (separate from the
+    /// top-of-screen TMDB search, which has a different purpose).
+    private var filteredOrderedIds: [Int] {
+        let q = listFilter.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return orderedTmdbIds }
+        return orderedTmdbIds.filter { id in
+            seenService.cachedMovie(for: id)?.title.lowercased().contains(q) ?? false
         }
     }
 
@@ -80,6 +140,9 @@ struct WatchedMoviesSheet: View {
             }
             .onChange(of: seenService.seenTmdbIds.count) { _, _ in
                 // Only re-order when membership changes, not when metadata loads
+                orderedTmdbIds = computeOrdering()
+            }
+            .onChange(of: sortOption) { _, _ in
                 orderedTmdbIds = computeOrdering()
             }
             .sheet(item: $selectedMovie) { movie in
@@ -218,7 +281,7 @@ struct WatchedMoviesSheet: View {
                     .foregroundColor(FFColors.textPrimary)
                 Spacer()
                 if !orderedTmdbIds.isEmpty {
-                    Text("\(orderedTmdbIds.count)")
+                    Text("\(filteredOrderedIds.count)")
                         .font(FFTypography.labelSmall)
                         .foregroundColor(FFColors.goldPrimary)
                         .padding(.horizontal, 8)
@@ -229,15 +292,25 @@ struct WatchedMoviesSheet: View {
             }
             .padding(.horizontal)
 
+            if !orderedTmdbIds.isEmpty {
+                listFilterAndSort
+            }
+
             if orderedTmdbIds.isEmpty {
                 emptyState(
                     icon: "eye.slash",
                     title: "Nothing watched yet",
                     subtitle: "Search above, import from Letterboxd, or mark movies while swiping"
                 )
+            } else if filteredOrderedIds.isEmpty {
+                emptyState(
+                    icon: "line.horizontal.3.decrease.circle",
+                    title: "No matches",
+                    subtitle: "Try a different filter"
+                )
             } else {
                 LazyVStack(spacing: FFSpacing.sm) {
-                    ForEach(Array(orderedTmdbIds.enumerated()), id: \.element) { index, tmdbId in
+                    ForEach(Array(filteredOrderedIds.enumerated()), id: \.element) { index, tmdbId in
                         Group {
                             if let cached = seenService.cachedMovie(for: tmdbId) {
                                 watchedRow(item: cached)
@@ -247,10 +320,10 @@ struct WatchedMoviesSheet: View {
                         }
                         .id(tmdbId)
                         .onAppear {
-                            if index >= orderedTmdbIds.count - 10 {
+                            if index >= filteredOrderedIds.count - 10 {
                                 Task {
                                     await seenService.hydrateMissingMetadata(
-                                        tmdbIds: orderedTmdbIds.suffix(from: index),
+                                        tmdbIds: orderedTmdbIds.suffix(from: min(index, orderedTmdbIds.count)),
                                         limit: 30
                                     )
                                 }
@@ -261,6 +334,55 @@ struct WatchedMoviesSheet: View {
                 .padding(.horizontal)
             }
         }
+    }
+
+    private var listFilterAndSort: some View {
+        HStack(spacing: FFSpacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "line.horizontal.3.decrease")
+                    .font(.system(size: 12))
+                    .foregroundColor(FFColors.textTertiary)
+                TextField("Filter your list", text: $listFilter)
+                    .font(FFTypography.labelSmall)
+                    .foregroundColor(FFColors.textPrimary)
+                    .autocorrectionDisabled()
+                if !listFilter.isEmpty {
+                    Button { listFilter = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(FFColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(FFColors.backgroundElevated.opacity(0.6))
+            .clipShape(Capsule())
+
+            Menu {
+                ForEach(SortOption.allCases, id: \.self) { option in
+                    Button {
+                        sortOption = option
+                    } label: {
+                        HStack {
+                            Text(option.rawValue)
+                            if sortOption == option { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.arrow.down").font(.system(size: 10, weight: .bold))
+                    Text(sortOption.rawValue).font(FFTypography.labelSmall)
+                }
+                .foregroundColor(FFColors.goldPrimary)
+                .padding(.horizontal, FFSpacing.md)
+                .padding(.vertical, 8)
+                .background(FFColors.goldPrimary.opacity(0.12))
+                .clipShape(Capsule())
+            }
+        }
+        .padding(.horizontal)
     }
 
     /// Placeholder row while a movie's metadata is still loading.

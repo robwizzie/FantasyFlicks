@@ -18,17 +18,27 @@ enum SwipeDirection {
 struct SwipeCardView<Content: View>: View {
     let content: Content
     let onSwipe: (SwipeDirection) -> Void
+    /// External trigger for a programmatic swipe (from check/X buttons). Setting
+    /// this to a non-nil direction fires the same fly-off animation as a real
+    /// swipe, including the SKIP/WATCH stamp, then calls `onSwipe`.
+    @Binding var programmaticSwipe: SwipeDirection?
 
     @State private var offset: CGSize = .zero
     @State private var isDragging = false
     @State private var dragLocked = false  // true = confirmed horizontal, false = not yet decided
     @State private var dragRejected = false  // vertical drag detected, ignore until end
+    /// When non-nil, drive the stamp from this value instead of the offset —
+    /// lets programmatic swipes flash the stamp without relying on any drag.
+    @State private var forcedStampDirection: SwipeDirection?
 
     private let swipeThreshold: CGFloat = 80
     private let maxRotation: Double = 10
 
-    init(@ViewBuilder content: () -> Content, onSwipe: @escaping (SwipeDirection) -> Void) {
+    init(@ViewBuilder content: () -> Content,
+         programmaticSwipe: Binding<SwipeDirection?> = .constant(nil),
+         onSwipe: @escaping (SwipeDirection) -> Void) {
         self.content = content()
+        self._programmaticSwipe = programmaticSwipe
         self.onSwipe = onSwipe
     }
 
@@ -79,6 +89,10 @@ struct SwipeCardView<Content: View>: View {
                     }
             )
             .animation(isDragging ? nil : .spring(response: 0.5, dampingFraction: 0.7, blendDuration: 0.1), value: offset)
+            .onChange(of: programmaticSwipe) { _, direction in
+                guard let direction else { return }
+                animateProgrammatic(direction: direction)
+            }
     }
 
     // MARK: - Computed Properties
@@ -96,15 +110,28 @@ struct SwipeCardView<Content: View>: View {
 
     private var swipeOverlay: some View {
         ZStack {
-            // WATCH stamp (right swipe)
+            // WATCH stamp (right swipe) — honor a forced direction so
+            // check-button taps still flash the stamp even before the
+            // offset animation kicks in.
             swipeStamp(text: "WATCH", color: FFColors.success, alignment: .leading)
-                .opacity(offset.width > 0 ? swipeProgress : 0)
+                .opacity(watchStampOpacity)
 
             // SKIP stamp (left swipe)
             swipeStamp(text: "SKIP", color: FFColors.ruby, alignment: .trailing)
-                .opacity(offset.width < 0 ? swipeProgress : 0)
+                .opacity(skipStampOpacity)
         }
-        .animation(.easeOut(duration: 0.1), value: swipeProgress)
+        .animation(.easeOut(duration: 0.12), value: swipeProgress)
+        .animation(.easeOut(duration: 0.12), value: forcedStampDirection)
+    }
+
+    private var watchStampOpacity: Double {
+        if forcedStampDirection == .right { return 1 }
+        return offset.width > 0 ? swipeProgress : 0
+    }
+
+    private var skipStampOpacity: Double {
+        if forcedStampDirection == .left { return 1 }
+        return offset.width < 0 ? swipeProgress : 0
     }
 
     private func swipeStamp(text: String, color: Color, alignment: Alignment) -> some View {
@@ -134,22 +161,60 @@ struct SwipeCardView<Content: View>: View {
         let velocityBoost = velocity.width / 4
 
         if horizontalAmount + velocityBoost > swipeThreshold {
-            // Swipe right — fly off screen with natural curve
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                offset = CGSize(width: 600, height: translation.height * 0.5)
-            }
-            onSwipe(.right)
+            flyOff(direction: .right, startHeight: translation.height * 0.5)
         } else if horizontalAmount + velocityBoost < -swipeThreshold {
-            // Swipe left — fly off screen
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                offset = CGSize(width: -600, height: translation.height * 0.5)
-            }
-            onSwipe(.left)
+            flyOff(direction: .left, startHeight: translation.height * 0.5)
         } else {
             // Spring back with bounce
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
                 offset = .zero
             }
+        }
+    }
+
+    /// Animate the card off-screen in the given direction, then notify the
+    /// parent. Slightly delaying `onSwipe` until the fly-off is mostly done
+    /// keeps the next card from popping in while this one is still on screen,
+    /// which was the "jump" users noticed.
+    private func flyOff(direction: SwipeDirection, startHeight: CGFloat = 0) {
+        let targetX: CGFloat = direction == .right ? 600 : -600
+        let flightDuration = 0.34
+
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            offset = CGSize(width: targetX, height: startHeight)
+        }
+
+        // Hand off to the parent right as the card clears the viewport.
+        // Parent advances currentIndex, which fades in the next card — by then
+        // this card is >85% off-screen so there's no visible overlap.
+        DispatchQueue.main.asyncAfter(deadline: .now() + flightDuration * 0.75) {
+            onSwipe(direction)
+        }
+    }
+
+    /// External (button-tap) swipe. Plays the stamp immediately and then
+    /// performs the same fly-off animation as a real drag-swipe.
+    private func animateProgrammatic(direction: SwipeDirection) {
+        // Clear the binding right away so subsequent rapid taps all register
+        // as fresh value changes, not deduped identical values.
+        DispatchQueue.main.async {
+            programmaticSwipe = nil
+        }
+
+        // Pin the stamp so it's visible even before offset-based progress
+        // catches up.
+        withAnimation(.easeIn(duration: 0.08)) {
+            forcedStampDirection = direction
+        }
+
+        // Nudge the offset so the stamp's opacity transitions smoothly into
+        // the fly-off animation.
+        withAnimation(.spring(response: 0.18, dampingFraction: 0.9)) {
+            offset = CGSize(width: direction == .right ? 120 : -120, height: 0)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            flyOff(direction: direction)
         }
     }
 }
@@ -396,10 +461,36 @@ struct CardStackView: View {
     let providers: [Int: [WatchProvider]] // tmdbId -> providers
     let seenMovies: Set<Int> // tmdb IDs
     var watchlistMovies: Set<Int> = []  // tmdb IDs on the current user's watchlist
+    /// External programmatic swipe trigger (from action buttons). CardStackView
+    /// forwards the binding to the active top card so the stamp animates
+    /// regardless of whether the user dragged or tapped.
+    @Binding var programmaticSwipe: SwipeDirection?
     let onSwipe: (SwipeDirection) -> Void
     let onToggleSeen: (Int) -> Void
     var onToggleWatchlist: (Int) -> Void = { _ in }
     let onTapDetail: (FFMovie) -> Void
+
+    init(movies: [FFMovie],
+         currentIndex: Int,
+         providers: [Int: [WatchProvider]],
+         seenMovies: Set<Int>,
+         watchlistMovies: Set<Int> = [],
+         programmaticSwipe: Binding<SwipeDirection?> = .constant(nil),
+         onSwipe: @escaping (SwipeDirection) -> Void,
+         onToggleSeen: @escaping (Int) -> Void,
+         onToggleWatchlist: @escaping (Int) -> Void = { _ in },
+         onTapDetail: @escaping (FFMovie) -> Void) {
+        self.movies = movies
+        self.currentIndex = currentIndex
+        self.providers = providers
+        self.seenMovies = seenMovies
+        self.watchlistMovies = watchlistMovies
+        self._programmaticSwipe = programmaticSwipe
+        self.onSwipe = onSwipe
+        self.onToggleSeen = onToggleSeen
+        self.onToggleWatchlist = onToggleWatchlist
+        self.onTapDetail = onTapDetail
+    }
 
     var body: some View {
         ZStack {
@@ -410,19 +501,24 @@ struct CardStackView: View {
 
                 if stackPosition == 0 {
                     // Top card — interactive
-                    SwipeCardView {
-                        MovieNightCardContent(
-                            movie: movie,
-                            providers: providers[movie.tmdbId] ?? [],
-                            hasSeenIt: seenMovies.contains(movie.tmdbId),
-                            isOnWatchlist: watchlistMovies.contains(movie.tmdbId),
-                            onToggleSeen: { onToggleSeen(movie.tmdbId) },
-                            onToggleWatchlist: { onToggleWatchlist(movie.tmdbId) },
-                            onTapDetail: { onTapDetail(movie) }
-                        )
-                    } onSwipe: { direction in
-                        onSwipe(direction)
-                    }
+                    SwipeCardView(
+                        content: {
+                            MovieNightCardContent(
+                                movie: movie,
+                                providers: providers[movie.tmdbId] ?? [],
+                                hasSeenIt: seenMovies.contains(movie.tmdbId),
+                                isOnWatchlist: watchlistMovies.contains(movie.tmdbId),
+                                onToggleSeen: { onToggleSeen(movie.tmdbId) },
+                                onToggleWatchlist: { onToggleWatchlist(movie.tmdbId) },
+                                onTapDetail: { onTapDetail(movie) }
+                            )
+                        },
+                        programmaticSwipe: $programmaticSwipe,
+                        onSwipe: { direction in
+                            onSwipe(direction)
+                        }
+                    )
+                    .id(movie.tmdbId)   // force state reset per card to avoid stale offset
                     .zIndex(3)
                     .transition(.asymmetric(
                         insertion: .opacity.combined(with: .scale(scale: 0.95)),

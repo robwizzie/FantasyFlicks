@@ -14,6 +14,16 @@ struct WatchlistView: View {
     @State private var searchResults: [FFMovie] = []
     @State private var isSearching = false
     @State private var selectedMovie: FFMovie?
+    @State private var listFilter = ""
+    @State private var sortOption: SortOption = .titleAsc
+
+    enum SortOption: String, CaseIterable {
+        case titleAsc = "Title (A–Z)"
+        case titleDesc = "Title (Z–A)"
+        case yearDesc = "Newest"
+        case yearAsc = "Oldest"
+        case ratingDesc = "TMDB rating"
+    }
 
     private var showingSearch: Bool {
         searchText.trimmingCharacters(in: .whitespaces).count >= 2
@@ -23,11 +33,51 @@ struct WatchlistView: View {
     @State private var orderedTmdbIds: [Int] = []
 
     private func computeOrdering() -> [Int] {
-        seenService.watchlist.sorted { a, b in
-            let t1 = seenService.cachedMovie(for: a)?.title ?? ""
-            let t2 = seenService.cachedMovie(for: b)?.title ?? ""
-            if t1 != t2 { return t1.localizedCaseInsensitiveCompare(t2) == .orderedAscending }
-            return a < b
+        let ids = Array(seenService.watchlist)
+        switch sortOption {
+        case .titleAsc:
+            return ids.sorted { a, b in
+                let t1 = seenService.cachedMovie(for: a)?.title ?? ""
+                let t2 = seenService.cachedMovie(for: b)?.title ?? ""
+                if t1 != t2 { return t1.localizedCaseInsensitiveCompare(t2) == .orderedAscending }
+                return a < b
+            }
+        case .titleDesc:
+            return ids.sorted { a, b in
+                let t1 = seenService.cachedMovie(for: a)?.title ?? ""
+                let t2 = seenService.cachedMovie(for: b)?.title ?? ""
+                if t1 != t2 { return t1.localizedCaseInsensitiveCompare(t2) == .orderedDescending }
+                return a > b
+            }
+        case .yearDesc:
+            return ids.sorted { a, b in
+                let y1 = seenService.cachedMovie(for: a)?.year ?? 0
+                let y2 = seenService.cachedMovie(for: b)?.year ?? 0
+                if y1 != y2 { return y1 > y2 }
+                return a < b
+            }
+        case .yearAsc:
+            return ids.sorted { a, b in
+                let y1 = seenService.cachedMovie(for: a)?.year ?? 9999
+                let y2 = seenService.cachedMovie(for: b)?.year ?? 9999
+                if y1 != y2 { return y1 < y2 }
+                return a < b
+            }
+        case .ratingDesc:
+            return ids.sorted { a, b in
+                let v1 = seenService.cachedMovie(for: a)?.voteAverage ?? -1
+                let v2 = seenService.cachedMovie(for: b)?.voteAverage ?? -1
+                if v1 != v2 { return v1 > v2 }
+                return a < b
+            }
+        }
+    }
+
+    private var filteredOrderedIds: [Int] {
+        let q = listFilter.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return orderedTmdbIds }
+        return orderedTmdbIds.filter { id in
+            seenService.cachedMovie(for: id)?.title.lowercased().contains(q) ?? false
         }
     }
 
@@ -74,6 +124,9 @@ struct WatchlistView: View {
                 runSearch(for: newValue)
             }
             .onChange(of: seenService.watchlist.count) { _, _ in
+                orderedTmdbIds = computeOrdering()
+            }
+            .onChange(of: sortOption) { _, _ in
                 orderedTmdbIds = computeOrdering()
             }
             .sheet(item: $selectedMovie) { movie in
@@ -215,7 +268,7 @@ struct WatchlistView: View {
                 Spacer()
 
                 if !watchlistItems.isEmpty {
-                    Text("\(watchlistItems.count)")
+                    Text("\(filteredOrderedIds.count)")
                         .font(FFTypography.labelSmall)
                         .foregroundColor(FFColors.goldPrimary)
                         .padding(.horizontal, 8)
@@ -226,15 +279,25 @@ struct WatchlistView: View {
             }
             .padding(.horizontal)
 
+            if !watchlistItems.isEmpty {
+                listFilterAndSort
+            }
+
             if watchlistItems.isEmpty {
                 emptyState(
                     icon: "bookmark",
                     title: "Nothing saved yet",
                     subtitle: "Search above to add movies to your watchlist"
                 )
+            } else if filteredOrderedIds.isEmpty {
+                emptyState(
+                    icon: "line.horizontal.3.decrease.circle",
+                    title: "No matches",
+                    subtitle: "Try a different filter"
+                )
             } else {
                 LazyVStack(spacing: FFSpacing.sm) {
-                    ForEach(Array(orderedTmdbIds.enumerated()), id: \.element) { index, tmdbId in
+                    ForEach(Array(filteredOrderedIds.enumerated()), id: \.element) { index, tmdbId in
                         Group {
                             if let item = seenService.cachedMovie(for: tmdbId) {
                                 watchlistRow(item: item)
@@ -244,10 +307,10 @@ struct WatchlistView: View {
                         }
                         .id(tmdbId)
                         .onAppear {
-                            if index >= orderedTmdbIds.count - 10 {
+                            if index >= filteredOrderedIds.count - 10 {
                                 Task {
                                     await seenService.hydrateMissingMetadata(
-                                        tmdbIds: orderedTmdbIds.suffix(from: index),
+                                        tmdbIds: orderedTmdbIds.suffix(from: min(index, orderedTmdbIds.count)),
                                         limit: 30
                                     )
                                 }
@@ -258,6 +321,55 @@ struct WatchlistView: View {
                 .padding(.horizontal)
             }
         }
+    }
+
+    private var listFilterAndSort: some View {
+        HStack(spacing: FFSpacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "line.horizontal.3.decrease")
+                    .font(.system(size: 12))
+                    .foregroundColor(FFColors.textTertiary)
+                TextField("Filter your list", text: $listFilter)
+                    .font(FFTypography.labelSmall)
+                    .foregroundColor(FFColors.textPrimary)
+                    .autocorrectionDisabled()
+                if !listFilter.isEmpty {
+                    Button { listFilter = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(FFColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(FFColors.backgroundElevated.opacity(0.6))
+            .clipShape(Capsule())
+
+            Menu {
+                ForEach(SortOption.allCases, id: \.self) { option in
+                    Button {
+                        sortOption = option
+                    } label: {
+                        HStack {
+                            Text(option.rawValue)
+                            if sortOption == option { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.arrow.down").font(.system(size: 10, weight: .bold))
+                    Text(sortOption.rawValue).font(FFTypography.labelSmall)
+                }
+                .foregroundColor(FFColors.goldPrimary)
+                .padding(.horizontal, FFSpacing.md)
+                .padding(.vertical, 8)
+                .background(FFColors.goldPrimary.opacity(0.12))
+                .clipShape(Capsule())
+            }
+        }
+        .padding(.horizontal)
     }
 
     private func watchlistRow(item: CachedMovie) -> some View {

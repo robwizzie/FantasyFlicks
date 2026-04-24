@@ -109,6 +109,7 @@ enum TMDBEndpoint: Sendable {
     case discoverForMovieNight(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?)
     case discoverClassics(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?)
     case movieRecommendations(id: Int, page: Int)
+    case movieImages(id: Int)
 
     var path: String {
         switch self {
@@ -125,6 +126,7 @@ enum TMDBEndpoint: Sendable {
         case .trending(let timeWindow, _): return "/trending/movie/\(timeWindow)"
         case .watchProviders(let movieId): return "/movie/\(movieId)/watch/providers"
         case .movieRecommendations(let id, _): return "/movie/\(id)/recommendations"
+        case .movieImages(let id): return "/movie/\(id)/images"
         }
     }
 
@@ -217,6 +219,11 @@ enum TMDBEndpoint: Sendable {
             }
         case .movieRecommendations(_, let page):
             items.append(URLQueryItem(name: "page", value: "\(page)"))
+        case .movieImages:
+            // TMDB's /movie/{id}/images returns all available posters in every
+            // language. Ask for English + untagged (no lang) so we get the
+            // English-text posters users expect plus the artworkless versions.
+            items.append(URLQueryItem(name: "include_image_language", value: "en,null"))
         default:
             break
         }

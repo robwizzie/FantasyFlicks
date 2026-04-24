@@ -16,6 +16,9 @@ struct FriendMediaSnapshot {
     var ratings: [Int: Double]
     var diary: [DiaryEntry]
     var cache: [Int: CachedMovie]
+    /// Friend's custom-poster picks for their pinned favorites. Lets their
+    /// chosen artwork render on your screen.
+    var favoritePosterOverrides: [Int: String]
 
     func cachedMovie(for tmdbId: Int) -> CachedMovie? {
         if let entry = cache[tmdbId] { return entry }
@@ -32,7 +35,7 @@ struct FriendMediaSnapshot {
     }
 
     static let empty = FriendMediaSnapshot(
-        seenIds: [], watchlistIds: [], ratings: [:], diary: [], cache: [:]
+        seenIds: [], watchlistIds: [], ratings: [:], diary: [], cache: [:], favoritePosterOverrides: [:]
     )
 }
 
@@ -99,12 +102,18 @@ final class FriendMediaService {
             )
         }
 
+        let rawOverrides = data["favoritePosterOverrides"] as? [String: String] ?? [:]
+        let overrides = rawOverrides.reduce(into: [Int: String]()) { result, pair in
+            if let key = Int(pair.key) { result[key] = pair.value }
+        }
+
         return FriendMediaSnapshot(
             seenIds: seenIds,
             watchlistIds: watchlistIds,
             ratings: ratings,
             diary: diary,
-            cache: cache
+            cache: cache,
+            favoritePosterOverrides: overrides
         )
     }
 }

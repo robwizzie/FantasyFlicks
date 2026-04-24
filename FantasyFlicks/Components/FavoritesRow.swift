@@ -2,9 +2,9 @@
 //  FavoritesRow.swift
 //  FantasyFlicks
 //
-//  A Letterboxd-style row of up to 4 pinned favorite movies. On your own
-//  profile, empty slots show a + tile that opens an edit sheet. On someone
-//  else's profile, empty slots are hidden.
+//  A Letterboxd-style row of up to 4 pinned favorite movies. Always renders
+//  all 4 slots so a friend's profile still shows where their Top 4 would be,
+//  even when they haven't pinned any. Respects user-picked alt posters.
 //
 
 import SwiftUI
@@ -14,6 +14,10 @@ struct FavoritesRow: View {
     let tmdbIds: [Int]
     /// When true, empty slots show a + tile and tapping opens the edit sheet.
     let isEditable: Bool
+    /// Optional poster-path override map (used on friend profiles to honor the
+    /// friend's own alt-poster picks). When nil, falls back to the local
+    /// SeenMoviesService override store (i.e. the current user's own picks).
+    var posterOverrides: [Int: String]? = nil
     /// Callback fired when any populated tile is tapped — hand off to a detail view.
     let onTapMovie: (FFMovie) -> Void
     /// Callback fired when the edit (+) tile is tapped — host should present an editor.
@@ -52,8 +56,9 @@ struct FavoritesRow: View {
                     } else if isEditable {
                         emptySlot
                     } else {
-                        // Hidden for viewers — don't advertise empty slots.
-                        Color.clear
+                        // Viewer sees a subtle placeholder so the Top 4 section
+                        // is always visible, even when the friend hasn't pinned any.
+                        viewerPlaceholderSlot
                     }
                 }
             }
@@ -65,6 +70,16 @@ struct FavoritesRow: View {
         }
     }
 
+    /// Resolve the active poster URL for a favorite: explicit override (for
+    /// viewing someone else's picks), local override store (your own picks),
+    /// or the default cached poster.
+    private func posterURL(for tmdbId: Int) -> URL? {
+        if let overridePath = posterOverrides?[tmdbId] {
+            return URL(string: "\(APIConfiguration.TMDB.imageBaseURL)/\(APIConfiguration.TMDB.PosterSize.medium.rawValue)\(overridePath)")
+        }
+        return seenService.favoritePosterURL(for: tmdbId)
+    }
+
     private func tile(for tmdbId: Int) -> some View {
         Button {
             if let cached = seenService.cachedMovie(for: tmdbId) {
@@ -72,7 +87,7 @@ struct FavoritesRow: View {
             }
         } label: {
             Group {
-                if let posterURL = seenService.cachedMovie(for: tmdbId)?.posterURL {
+                if let posterURL = posterURL(for: tmdbId) {
                     CachedAsyncImage(url: posterURL) { image in
                         image.resizable().aspectRatio(contentMode: .fill)
                     } placeholder: {
@@ -125,5 +140,21 @@ struct FavoritesRow: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
+    }
+
+    private var viewerPlaceholderSlot: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(FFColors.backgroundElevated.opacity(0.25))
+            .overlay {
+                Image(systemName: "film")
+                    .font(.system(size: 16))
+                    .foregroundColor(FFColors.textTertiary.opacity(0.5))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(FFColors.textTertiary.opacity(0.15), lineWidth: 0.5)
+            }
+            .aspectRatio(2.0 / 3.0, contentMode: .fit)
+            .frame(maxWidth: .infinity)
     }
 }
