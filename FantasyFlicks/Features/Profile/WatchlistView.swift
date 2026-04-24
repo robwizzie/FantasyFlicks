@@ -2,7 +2,7 @@
 //  WatchlistView.swift
 //  FantasyFlicks
 //
-//  Want-to-watch movie list
+//  Want-to-watch list with search to add and full display of saved items.
 //
 
 import SwiftUI
@@ -13,6 +13,27 @@ struct WatchlistView: View {
     @State private var searchText = ""
     @State private var searchResults: [FFMovie] = []
     @State private var isSearching = false
+    @State private var selectedMovie: FFMovie?
+
+    private var showingSearch: Bool {
+        searchText.trimmingCharacters(in: .whitespaces).count >= 2
+    }
+
+    /// Stable ordering snapshot — see RatingsView / WatchedMoviesView for the same pattern.
+    @State private var orderedTmdbIds: [Int] = []
+
+    private func computeOrdering() -> [Int] {
+        seenService.watchlist.sorted { a, b in
+            let t1 = seenService.cachedMovie(for: a)?.title ?? ""
+            let t2 = seenService.cachedMovie(for: b)?.title ?? ""
+            if t1 != t2 { return t1.localizedCaseInsensitiveCompare(t2) == .orderedAscending }
+            return a < b
+        }
+    }
+
+    private var watchlistItems: [CachedMovie] {
+        orderedTmdbIds.compactMap { seenService.cachedMovie(for: $0) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -20,53 +41,13 @@ struct WatchlistView: View {
                 FFColors.backgroundDark.ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: FFSpacing.xl) {
-                        // Count
-                        GlassCard(goldTint: true) {
-                            HStack(spacing: FFSpacing.md) {
-                                Image(systemName: "bookmark.fill")
-                                    .font(.system(size: 28))
-                                    .foregroundColor(FFColors.goldPrimary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("\(seenService.watchlist.count)")
-                                        .font(FFTypography.statMedium)
-                                        .foregroundColor(FFColors.textPrimary)
-                                    Text("movies on your watchlist")
-                                        .font(FFTypography.bodySmall)
-                                        .foregroundColor(FFColors.textSecondary)
-                                }
-                                Spacer()
-                            }
-                        }
-                        .padding(.horizontal)
+                    VStack(spacing: FFSpacing.lg) {
+                        searchBar
 
-                        // Search to add
-                        VStack(alignment: .leading, spacing: FFSpacing.md) {
-                            Text("Add to Watchlist")
-                                .font(FFTypography.headlineSmall)
-                                .foregroundColor(FFColors.textPrimary)
-                                .padding(.horizontal)
-
-                            HStack(spacing: FFSpacing.sm) {
-                                Image(systemName: "magnifyingglass")
-                                    .foregroundColor(FFColors.textTertiary)
-                                TextField("Search for a movie...", text: $searchText)
-                                    .font(FFTypography.bodyMedium)
-                                    .foregroundColor(FFColors.textPrimary)
-                                    .textInputAutocapitalization(.words)
-                                    .onSubmit { Task { await search() } }
-                                if isSearching {
-                                    ProgressView().scaleEffect(0.8).tint(FFColors.goldPrimary)
-                                }
-                            }
-                            .padding(FFSpacing.md)
-                            .background(FFColors.backgroundElevated)
-                            .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
-                            .padding(.horizontal)
-
-                            ForEach(searchResults) { movie in
-                                watchlistRow(movie: movie)
-                            }
+                        if showingSearch {
+                            searchResultsSection
+                        } else {
+                            watchlistSection
                         }
 
                         Spacer(minLength: 100)
@@ -82,65 +63,354 @@ struct WatchlistView: View {
                         .foregroundColor(FFColors.goldPrimary)
                 }
             }
+            .task {
+                orderedTmdbIds = computeOrdering()
+                await seenService.hydrateMissingMetadata(
+                    tmdbIds: orderedTmdbIds.prefix(50),
+                    limit: 50
+                )
+            }
             .onChange(of: searchText) { _, newValue in
-                if newValue.count >= 2 {
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(400))
-                        guard searchText == newValue else { return }
-                        await search()
-                    }
-                } else {
-                    searchResults = []
-                }
+                runSearch(for: newValue)
+            }
+            .onChange(of: seenService.watchlist.count) { _, _ in
+                orderedTmdbIds = computeOrdering()
+            }
+            .sheet(item: $selectedMovie) { movie in
+                NavigationStack { MovieDetailView(movie: movie) }
             }
         }
     }
 
-    private func watchlistRow(movie: FFMovie) -> some View {
+    // MARK: - Search bar
+
+    private var searchBar: some View {
+        HStack(spacing: FFSpacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(FFColors.textTertiary)
+
+            TextField("Search to add a movie", text: $searchText)
+                .font(FFTypography.bodyMedium)
+                .foregroundColor(FFColors.textPrimary)
+                .textInputAutocapitalization(.words)
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                    searchResults = []
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(FFColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if isSearching {
+                InlineLoader(size: 16)
+            }
+        }
+        .padding(FFSpacing.md)
+        .background(FFColors.backgroundElevated)
+        .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+        .overlay {
+            RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+        }
+        .padding(.horizontal)
+    }
+
+    // MARK: - Search results
+
+    private var searchResultsSection: some View {
+        VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack {
+                Text("Results")
+                    .font(FFTypography.labelMedium)
+                    .foregroundColor(FFColors.textTertiary)
+                Spacer()
+                if !searchResults.isEmpty {
+                    Text("\(searchResults.count) found")
+                        .font(FFTypography.caption)
+                        .foregroundColor(FFColors.textTertiary)
+                }
+            }
+            .padding(.horizontal)
+
+            if searchResults.isEmpty && !isSearching {
+                emptyState(icon: "magnifyingglass", title: "No results", subtitle: "Try a different title")
+            } else {
+                VStack(spacing: FFSpacing.sm) {
+                    ForEach(searchResults) { movie in
+                        searchResultRow(movie: movie)
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    private func searchResultRow(movie: FFMovie) -> some View {
         let isOn = seenService.isOnWatchlist(tmdbId: movie.tmdbId)
 
         return HStack(spacing: FFSpacing.md) {
-            if let posterURL = movie.posterURL {
-                CachedAsyncImage(url: posterURL) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: { FFColors.backgroundElevated }
-                .frame(width: 40, height: 60)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
+            posterThumb(url: movie.posterURL)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(movie.title)
                     .font(FFTypography.labelMedium)
                     .foregroundColor(FFColors.textPrimary)
                     .lineLimit(1)
-                if let year = movie.year {
-                    Text(String(year))
-                        .font(FFTypography.caption)
-                        .foregroundColor(FFColors.textTertiary)
+
+                HStack(spacing: FFSpacing.sm) {
+                    if let year = movie.year {
+                        Text(String(year))
+                            .font(FFTypography.caption)
+                            .foregroundColor(FFColors.textTertiary)
+                    }
+                    if movie.voteAverage > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(FFColors.goldPrimary)
+                            Text(String(format: "%.1f", movie.voteAverage))
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.goldLight)
+                        }
+                    }
                 }
             }
 
             Spacer()
 
             Button {
-                seenService.toggleWatchlist(tmdbId: movie.tmdbId)
+                seenService.toggleWatchlist(movie)
             } label: {
                 Image(systemName: isOn ? "bookmark.fill" : "bookmark")
-                    .font(.system(size: 18))
+                    .font(.system(size: 20))
                     .foregroundColor(isOn ? FFColors.goldPrimary : FFColors.textTertiary)
+                    .frame(width: 36, height: 36)
             }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal)
-        .padding(.vertical, FFSpacing.xs)
+        .padding(FFSpacing.md)
+        .background {
+            RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                .fill(FFColors.backgroundElevated.opacity(0.5))
+                .overlay {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                }
+        }
     }
 
-    private func search() async {
-        guard !searchText.isEmpty else { return }
+    // MARK: - Actual Watchlist
+
+    private var watchlistSection: some View {
+        VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack {
+                Text("Your Watchlist")
+                    .font(FFTypography.headlineSmall)
+                    .foregroundColor(FFColors.textPrimary)
+
+                Spacer()
+
+                if !watchlistItems.isEmpty {
+                    Text("\(watchlistItems.count)")
+                        .font(FFTypography.labelSmall)
+                        .foregroundColor(FFColors.goldPrimary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(FFColors.goldPrimary.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal)
+
+            if watchlistItems.isEmpty {
+                emptyState(
+                    icon: "bookmark",
+                    title: "Nothing saved yet",
+                    subtitle: "Search above to add movies to your watchlist"
+                )
+            } else {
+                LazyVStack(spacing: FFSpacing.sm) {
+                    ForEach(Array(orderedTmdbIds.enumerated()), id: \.element) { index, tmdbId in
+                        Group {
+                            if let item = seenService.cachedMovie(for: tmdbId) {
+                                watchlistRow(item: item)
+                            } else {
+                                Color.clear.frame(height: 76) // placeholder until hydrated
+                            }
+                        }
+                        .id(tmdbId)
+                        .onAppear {
+                            if index >= orderedTmdbIds.count - 10 {
+                                Task {
+                                    await seenService.hydrateMissingMetadata(
+                                        tmdbIds: orderedTmdbIds.suffix(from: index),
+                                        limit: 30
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    private func watchlistRow(item: CachedMovie) -> some View {
+        Button {
+            selectedMovie = item.toFFMovie()
+        } label: {
+            HStack(spacing: FFSpacing.md) {
+                posterThumb(url: item.posterURL)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.title)
+                        .font(FFTypography.labelMedium)
+                        .foregroundColor(FFColors.textPrimary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    HStack(spacing: FFSpacing.sm) {
+                        if let year = item.year {
+                            Text(String(year))
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textTertiary)
+                        }
+                        if let vote = item.voteAverage, vote > 0 {
+                            HStack(spacing: 2) {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(FFColors.goldPrimary)
+                                Text(String(format: "%.1f", vote))
+                                    .font(FFTypography.caption)
+                                    .foregroundColor(FFColors.goldLight)
+                            }
+                        }
+                    }
+                }
+
+                Spacer()
+
+                // Mark as seen → removes from watchlist
+                Button {
+                    seenService.markSeen(item.toFFMovie())
+                    seenService.removeFromWatchlist(tmdbId: item.id)
+                    orderedTmdbIds = computeOrdering()
+                } label: {
+                    Image(systemName: "eye")
+                        .font(.system(size: 16))
+                        .foregroundColor(FFColors.textSecondary)
+                        .frame(width: 36, height: 36)
+                        .background(FFColors.backgroundElevated2)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+
+                // Remove from watchlist
+                Button {
+                    seenService.removeFromWatchlist(tmdbId: item.id)
+                    orderedTmdbIds = computeOrdering()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14))
+                        .foregroundColor(FFColors.ruby.opacity(0.7))
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(FFSpacing.md)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background {
+            RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                .fill(FFColors.backgroundElevated.opacity(0.5))
+                .overlay {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func posterThumb(url: URL?) -> some View {
+        Group {
+            if let url {
+                CachedAsyncImage(url: url) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(FFColors.backgroundElevated)
+                        .shimmer()
+                }
+            } else {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(FFColors.backgroundElevated)
+                    .overlay {
+                        Image(systemName: "film")
+                            .foregroundColor(FFColors.textTertiary)
+                    }
+            }
+        }
+        .frame(width: 48, height: 72)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func emptyState(icon: String, title: String, subtitle: String) -> some View {
+        VStack(spacing: FFSpacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 36))
+                .foregroundColor(FFColors.textTertiary)
+            Text(title)
+                .font(FFTypography.titleSmall)
+                .foregroundColor(FFColors.textSecondary)
+            Text(subtitle)
+                .font(FFTypography.caption)
+                .foregroundColor(FFColors.textTertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, FFSpacing.xxl)
+        .padding(.horizontal, FFSpacing.xl)
+    }
+
+    /// Build a lightweight FFMovie from a cached entry (enough to mark as seen with cache)
+    private func ffMovie(from cached: CachedMovie) -> FFMovie {
+        FFMovie(
+            tmdbId: cached.id,
+            title: cached.title,
+            overview: "",
+            posterPath: cached.posterPath,
+            backdropPath: cached.backdropPath,
+            voteAverage: cached.voteAverage ?? 0
+        )
+    }
+
+    private func runSearch(for raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 2 else {
+            searchResults = []
+            isSearching = false
+            return
+        }
+
         isSearching = true
-        do {
-            let response = try await TMDBService.shared.searchMovies(query: searchText)
-            searchResults = response.results.prefix(10).map { TMDBService.shared.convertToFFMovie($0) }
-        } catch { searchResults = [] }
-        isSearching = false
+        Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            guard searchText == raw else { return }
+            do {
+                let response = try await TMDBService.shared.searchMovies(query: trimmed, page: 1)
+                guard searchText == raw else { return }
+                searchResults = response.results.prefix(10).map { TMDBService.shared.convertToFFMovie($0) }
+            } catch {
+                searchResults = []
+            }
+            isSearching = false
+        }
     }
 }

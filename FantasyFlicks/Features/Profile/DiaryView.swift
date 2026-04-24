@@ -10,6 +10,7 @@ import SwiftUI
 struct DiaryView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var seenService = SeenMoviesService.shared
+    @State private var selectedMovie: FFMovie?
 
     private var groupedEntries: [(String, [DiaryEntry])] {
         let formatter = DateFormatter()
@@ -42,8 +43,14 @@ struct DiaryView: View {
                         ForEach(groupedEntries, id: \.0) { month, entries in
                             Section {
                                 ForEach(entries) { entry in
-                                    diaryRow(entry: entry)
-                                        .listRowBackground(FFColors.backgroundElevated.opacity(0.3))
+                                    Button {
+                                        openMovie(for: entry)
+                                    } label: {
+                                        diaryRow(entry: entry)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .listRowBackground(FFColors.backgroundElevated.opacity(0.3))
                                 }
                                 .onDelete { indexSet in
                                     for index in indexSet {
@@ -68,55 +75,89 @@ struct DiaryView: View {
                         .foregroundColor(FFColors.goldPrimary)
                 }
             }
+            .sheet(item: $selectedMovie) { movie in
+                NavigationStack { MovieDetailView(movie: movie) }
+            }
+        }
+    }
+
+    private func openMovie(for entry: DiaryEntry) {
+        // Prefer a richer cached record if one exists; fall back to the entry itself.
+        if let cached = seenService.cachedMovie(for: entry.tmdbId) {
+            selectedMovie = cached.toFFMovie()
+        } else {
+            selectedMovie = FFMovie(
+                tmdbId: entry.tmdbId,
+                title: entry.title,
+                posterPath: entry.posterPath
+            )
         }
     }
 
     private func diaryRow(entry: DiaryEntry) -> some View {
-        HStack(spacing: FFSpacing.md) {
-            // Poster
-            if let posterURL = entry.posterURL {
+        HStack(alignment: .top, spacing: FFSpacing.md) {
+            // Poster — fall back to cached metadata if the entry itself has no path
+            posterView(entry: entry)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 4) {
+                    Text(entry.title)
+                        .font(FFTypography.labelMedium)
+                        .foregroundColor(FFColors.textPrimary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    if entry.isRewatch {
+                        Text("rewatch")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(FFColors.goldPrimary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(FFColors.goldPrimary.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
+                }
+
+                Text(entry.watchedDate, style: .date)
+                    .font(FFTypography.caption)
+                    .foregroundColor(FFColors.textTertiary)
+
+                if let rating = entry.effectiveRating {
+                    StarRatingDisplay(rating: rating, size: 10)
+                }
+
+                if let review = entry.reviewText, !review.isEmpty {
+                    Text(review)
+                        .font(FFTypography.caption)
+                        .foregroundColor(FFColors.textSecondary)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, FFSpacing.xs)
+    }
+
+    private func posterView(entry: DiaryEntry) -> some View {
+        Group {
+            let posterURL = entry.posterURL ?? seenService.cachedMovie(for: entry.tmdbId)?.posterURL
+            if let posterURL {
                 CachedAsyncImage(url: posterURL) { image in
                     image.resizable().aspectRatio(contentMode: .fill)
                 } placeholder: {
                     FFColors.backgroundElevated
                 }
-                .frame(width: 44, height: 66)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(entry.title)
-                    .font(FFTypography.labelMedium)
-                    .foregroundColor(FFColors.textPrimary)
-                    .lineLimit(1)
-
-                // Date
-                Text(entry.watchedDate, style: .date)
-                    .font(FFTypography.caption)
-                    .foregroundColor(FFColors.textTertiary)
-
-                // Stars
-                if let rating = entry.rating {
-                    HStack(spacing: 2) {
-                        ForEach(1...5, id: \.self) { star in
-                            Image(systemName: star <= rating ? "star.fill" : "star")
-                                .font(.system(size: 10))
-                                .foregroundColor(star <= rating ? FFColors.goldPrimary : FFColors.textTertiary)
-                        }
+            } else {
+                FFColors.backgroundElevated
+                    .overlay {
+                        Image(systemName: "film")
+                            .foregroundColor(FFColors.textTertiary)
                     }
-                }
-
-                // Review snippet
-                if let review = entry.reviewText, !review.isEmpty {
-                    Text(review)
-                        .font(FFTypography.caption)
-                        .foregroundColor(FFColors.textSecondary)
-                        .lineLimit(2)
-                }
             }
-
-            Spacer()
         }
-        .padding(.vertical, FFSpacing.xs)
+        .frame(width: 44, height: 66)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }

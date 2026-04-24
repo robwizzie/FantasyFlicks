@@ -254,6 +254,7 @@ struct MovieNightSetupView: View {
                     title: "Fine-Tune",
                     subtitle: "Set your quality bar and sources"
                 )
+                .padding(.horizontal)
 
                 // Year filter
                 GlassCard {
@@ -449,6 +450,7 @@ struct MovieNightSetupView: View {
                     title: "Ready to Go!",
                     subtitle: "Here's your Movie Night setup"
                 )
+                .padding(.horizontal)
 
                 GlassCard(goldTint: true) {
                     VStack(alignment: .leading, spacing: FFSpacing.lg) {
@@ -574,6 +576,7 @@ struct MovieNightSetupView: View {
                 .font(FFTypography.bodyMedium)
                 .foregroundColor(FFColors.textSecondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func loadGenres() async {

@@ -9,6 +9,9 @@ import SwiftUI
 
 struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
+    @StateObject private var seenService = SeenMoviesService.shared
+    @StateObject private var friendsService = FriendsService.shared
+    @StateObject private var authService = AuthenticationService.shared
     @ObservedObject private var navigationCoordinator = NavigationCoordinator.shared
     @State private var showNotifications = false
     @State private var animateHero = false
@@ -73,18 +76,9 @@ struct HomeView: View {
                         .frame(height: 36)
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showNotifications = true
-                    } label: {
-                        Image(systemName: "bell.fill")
-                            .font(.system(size: 18))
-                            .foregroundColor(FFColors.goldPrimary)
-                    }
-                }
-            }
-            .sheet(isPresented: $showNotifications) {
-                NotificationsSheet()
+                // Notifications bell hidden until real notification content exists.
+                // Leave the @State and the NotificationsSheet in place so we can
+                // re-enable this one line when we're ready.
             }
             .sheet(item: $selectedMovie) { movie in
                 NavigationStack {
@@ -201,33 +195,75 @@ struct HomeView: View {
     private var heroSection: some View {
         VStack(spacing: FFSpacing.lg) {
             // Welcome message
-            VStack(spacing: FFSpacing.sm) {
-                Text("Welcome back!")
+            VStack(spacing: FFSpacing.xs) {
+                Text("Welcome back")
                     .font(FFTypography.bodyMedium)
                     .foregroundColor(FFColors.textSecondary)
 
-                Text("Fantasy Film League")
+                Text(heroGreeting)
                     .font(FFTypography.displaySmall)
                     .foregroundStyle(FFColors.goldGradient)
+                    .multilineTextAlignment(.center)
+
+                Text("What are we watching tonight?")
+                    .font(FFTypography.bodySmall)
+                    .foregroundColor(FFColors.textTertiary)
+                    .padding(.top, 4)
             }
             .opacity(animateHero ? 1 : 0)
             .offset(y: animateHero ? 0 : 20)
 
             // Stats overview
             HStack(spacing: FFSpacing.xl) {
-                StatBubble(value: "\(viewModel.totalLeagues)", label: "Leagues", icon: "trophy.fill")
-                StatBubble(value: "\(viewModel.totalMoviesDrafted)", label: "Movies", icon: "film.fill")
-                StatBubble(value: viewModel.bestRank > 0 ? "#\(viewModel.bestRank)" : "-", label: "Best Rank", icon: "medal.fill")
+                StatBubble(
+                    value: "\(seenService.count)",
+                    label: "Watched",
+                    icon: "eye.fill"
+                )
+                StatBubble(
+                    value: "\(seenService.watchlist.count)",
+                    label: "Watchlist",
+                    icon: "bookmark.fill"
+                )
+                StatBubble(
+                    value: "\(friendCount)",
+                    label: friendCount == 1 ? "Friend" : "Friends",
+                    icon: "person.2.fill"
+                )
             }
             .opacity(animateHero ? 1 : 0)
             .offset(y: animateHero ? 0 : 30)
         }
         .padding(.horizontal)
+        .task {
+            await friendsService.refreshFriendList()
+        }
         .onAppear {
             withAnimation(FFAnimations.smooth.delay(0.2)) {
                 animateHero = true
             }
         }
+    }
+
+    /// "{first name}" or a gracious fallback.
+    private var heroGreeting: String {
+        if let user = authService.currentUser {
+            let fullName = user.displayName.trimmingCharacters(in: .whitespaces)
+            if !fullName.isEmpty {
+                return fullName.components(separatedBy: .whitespaces).first ?? fullName
+            }
+            if !user.username.isEmpty {
+                return user.username
+            }
+        }
+        return "Movie Lover"
+    }
+
+    private var friendCount: Int {
+        // Prefer the hydrated list count; fall back to the user's raw friendIds array
+        let hydrated = friendsService.friends.count
+        if hydrated > 0 { return hydrated }
+        return authService.currentUser?.friendIds.count ?? 0
     }
 
     // MARK: - Active Draft Banner
@@ -358,6 +394,14 @@ struct HomeView: View {
                 }
 
                 QuickActionCard(
+                    icon: "person.2.fill",
+                    title: "Friends",
+                    color: FFColors.goldPrimary
+                ) {
+                    navigationCoordinator.navigateTo(.friends)
+                }
+
+                QuickActionCard(
                     icon: "magnifyingglass",
                     title: "Browse Movies",
                     color: FFColors.goldDark
@@ -366,14 +410,8 @@ struct HomeView: View {
                 }
 
                 ComingSoonCard(
-                    icon: "list.clipboard.fill",
-                    title: "Fantasy Draft",
-                    color: FFColors.goldPrimary
-                )
-
-                ComingSoonCard(
                     icon: "trophy.fill",
-                    title: "Leagues",
+                    title: "Fantasy Leagues",
                     color: FFColors.goldLight
                 )
             }
@@ -393,7 +431,7 @@ struct HomeView: View {
                 Spacer()
 
                 Button {
-                    navigationCoordinator.navigateTo(.leagues)
+                    // Leagues tab removed; this section is no longer called from the body.
                 } label: {
                     HStack(spacing: 4) {
                         Text("See All")
@@ -408,8 +446,8 @@ struct HomeView: View {
 
             if activeLeagues.isEmpty {
                 JoinLeagueCard(
-                    onCreateTap: { navigationCoordinator.showCreateLeagueFlow() },
-                    onJoinTap: { navigationCoordinator.showJoinLeagueFlow() }
+                    onCreateTap: { },
+                    onJoinTap: { }
                 )
                     .padding(.horizontal)
             } else {

@@ -9,11 +9,17 @@ import SwiftUI
 
 struct ReviewSheet: View {
     let movie: FFMovie
+    /// If set, we're editing an existing diary entry (rewatch edit, etc.)
+    var existingEntryId: String? = nil
+    /// Defaults to `false`. If true, the saved entry is marked as a rewatch.
+    var isRewatchDefault: Bool = false
+
     @Environment(\.dismiss) private var dismiss
     @StateObject private var seenService = SeenMoviesService.shared
-    @State private var rating: Int = 0
+    @State private var rating: Double = 0
     @State private var watchedDate = Date()
     @State private var reviewText = ""
+    @State private var isRewatch = false
 
     var body: some View {
         NavigationStack {
@@ -51,7 +57,7 @@ struct ReviewSheet: View {
                         }
                         .padding(.horizontal)
 
-                        // Rating
+                        // Rating — Letterboxd-style half-stars
                         GlassCard {
                             VStack(spacing: FFSpacing.md) {
                                 Text("Your Rating")
@@ -60,20 +66,58 @@ struct ReviewSheet: View {
 
                                 HStack(spacing: FFSpacing.sm) {
                                     ForEach(1...5, id: \.self) { star in
+                                        let starDouble = Double(star)
+                                        let iconName: String = {
+                                            if rating >= starDouble { return "star.fill" }
+                                            if rating >= starDouble - 0.5 { return "star.leadinghalf.filled" }
+                                            return "star"
+                                        }()
+                                        let filled = (rating >= starDouble - 0.5)
+
                                         Button {
                                             withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
-                                                rating = rating == star ? 0 : star
+                                                if rating == starDouble {
+                                                    rating = starDouble - 0.5
+                                                } else if rating == starDouble - 0.5 {
+                                                    rating = starDouble
+                                                } else {
+                                                    rating = starDouble
+                                                }
+                                                if rating < 0 { rating = 0 }
                                             }
                                         } label: {
-                                            Image(systemName: star <= rating ? "star.fill" : "star")
-                                                .font(.system(size: 28))
-                                                .foregroundColor(star <= rating ? FFColors.goldPrimary : FFColors.textTertiary)
-                                                .scaleEffect(star <= rating ? 1.1 : 1.0)
+                                            Image(systemName: iconName)
+                                                .font(.system(size: 30))
+                                                .foregroundColor(filled ? FFColors.goldPrimary : FFColors.textTertiary)
+                                                .symbolRenderingMode(.hierarchical)
                                         }
                                         .buttonStyle(.plain)
                                     }
                                 }
+
+                                if rating > 0 {
+                                    Button("Clear rating") {
+                                        withAnimation { rating = 0 }
+                                    }
+                                    .font(FFTypography.caption)
+                                    .foregroundColor(FFColors.textTertiary)
+                                }
                             }
+                        }
+                        .padding(.horizontal)
+
+                        // Rewatch toggle
+                        GlassCard {
+                            Toggle(isOn: $isRewatch) {
+                                HStack {
+                                    Image(systemName: "arrow.clockwise")
+                                        .foregroundColor(FFColors.goldPrimary)
+                                    Text("Rewatch")
+                                        .font(FFTypography.labelMedium)
+                                        .foregroundColor(FFColors.textPrimary)
+                                }
+                            }
+                            .tint(FFColors.goldPrimary)
                         }
                         .padding(.horizontal)
 
@@ -132,13 +176,15 @@ struct ReviewSheet: View {
                             size: .large,
                             fullWidth: true
                         ) {
+                            let starsToSave: Double? = rating > 0 ? rating : nil
                             seenService.addDiaryEntry(
                                 tmdbId: movie.tmdbId,
                                 title: movie.title,
                                 posterPath: movie.posterPath,
                                 watchedDate: watchedDate,
-                                rating: rating > 0 ? rating : nil,
-                                reviewText: reviewText.isEmpty ? nil : reviewText
+                                rating: starsToSave,
+                                reviewText: reviewText.isEmpty ? nil : reviewText,
+                                isRewatch: isRewatch
                             )
                             dismiss()
                         }
@@ -162,6 +208,7 @@ struct ReviewSheet: View {
                 if let existing = seenService.rating(for: movie.tmdbId) {
                     rating = existing
                 }
+                isRewatch = isRewatchDefault
             }
         }
     }

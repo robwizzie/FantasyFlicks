@@ -160,7 +160,9 @@ struct MovieNightCardContent: View {
     let movie: FFMovie
     let providers: [WatchProvider]
     let hasSeenIt: Bool
+    var isOnWatchlist: Bool = false
     let onToggleSeen: () -> Void
+    var onToggleWatchlist: () -> Void = {}
     let onTapDetail: () -> Void
 
     var body: some View {
@@ -171,8 +173,8 @@ struct MovieNightCardContent: View {
             // Bottom info overlay
             cardInfoOverlay
 
-            // Seen it toggle (top right)
-            seenItButton
+            // Seen it + watchlist toggles (top right)
+            cornerActions
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(2.0 / 3.0, contentMode: .fit)
@@ -329,46 +331,60 @@ struct MovieNightCardContent: View {
         }
     }
 
-    // MARK: - Seen It Button
+    // MARK: - Corner Actions (Seen + Watchlist)
 
-    private var seenItButton: some View {
+    private var cornerActions: some View {
         VStack {
             HStack {
                 Spacer()
-                VStack(alignment: .trailing, spacing: 4) {
-                    Button(action: onToggleSeen) {
-                        HStack(spacing: 4) {
-                            Image(systemName: hasSeenIt ? "eye.fill" : "eye")
-                                .font(.system(size: 13, weight: .semibold))
-                            if hasSeenIt {
-                                Text("Seen")
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                        }
-                        .foregroundColor(hasSeenIt ? FFColors.goldPrimary : FFColors.textSecondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                        .overlay {
-                            Capsule()
-                                .stroke(hasSeenIt ? FFColors.goldPrimary.opacity(0.5) : Color.white.opacity(0.2), lineWidth: 1)
-                        }
-                    }
+                VStack(alignment: .trailing, spacing: 6) {
+                    pill(
+                        icon: hasSeenIt ? "eye.fill" : "eye",
+                        label: hasSeenIt ? "Seen" : nil,
+                        active: hasSeenIt,
+                        action: onToggleSeen
+                    )
+
+                    pill(
+                        icon: isOnWatchlist ? "bookmark.fill" : "bookmark",
+                        label: isOnWatchlist ? "Saved" : nil,
+                        active: isOnWatchlist,
+                        action: onToggleWatchlist
+                    )
 
                     // Star rating (shown when movie is marked as seen)
                     if hasSeenIt {
-                        StarRatingView(
-                            tmdbId: movie.tmdbId,
-                            compact: true
-                        )
-                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                        StarRatingView(tmdbId: movie.tmdbId, compact: true)
+                            .transition(.opacity.combined(with: .scale(scale: 0.8)))
                     }
                 }
             }
             Spacer()
         }
         .padding(FFSpacing.md)
+    }
+
+    private func pill(icon: String, label: String?, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                if let label {
+                    Text(label)
+                        .font(.system(size: 11, weight: .semibold))
+                }
+            }
+            .foregroundColor(active ? FFColors.goldPrimary : FFColors.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(active ? FFColors.goldPrimary.opacity(0.5) : Color.white.opacity(0.2), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -379,8 +395,10 @@ struct CardStackView: View {
     let currentIndex: Int
     let providers: [Int: [WatchProvider]] // tmdbId -> providers
     let seenMovies: Set<Int> // tmdb IDs
+    var watchlistMovies: Set<Int> = []  // tmdb IDs on the current user's watchlist
     let onSwipe: (SwipeDirection) -> Void
-    let onToggleSeen: (Int) -> Void // tmdbId
+    let onToggleSeen: (Int) -> Void
+    var onToggleWatchlist: (Int) -> Void = { _ in }
     let onTapDetail: (FFMovie) -> Void
 
     var body: some View {
@@ -397,7 +415,9 @@ struct CardStackView: View {
                             movie: movie,
                             providers: providers[movie.tmdbId] ?? [],
                             hasSeenIt: seenMovies.contains(movie.tmdbId),
+                            isOnWatchlist: watchlistMovies.contains(movie.tmdbId),
                             onToggleSeen: { onToggleSeen(movie.tmdbId) },
+                            onToggleWatchlist: { onToggleWatchlist(movie.tmdbId) },
                             onTapDetail: { onTapDetail(movie) }
                         )
                     } onSwipe: { direction in
@@ -443,26 +463,61 @@ struct StarRatingView: View {
     var compact: Bool = false
     @StateObject private var seenService = SeenMoviesService.shared
 
-    private var currentRating: Int {
+    private var currentRating: Double {
         seenService.rating(for: tmdbId) ?? 0
+    }
+
+    /// Letterboxd-style tap behavior:
+    ///   - Empty → tap N = set to N whole stars
+    ///   - Same whole star (e.g. 4 → tap 4) = set to 3.5 (halve down)
+    ///   - Same half star (e.g. 3.5 → tap 4) = set to 4 (fill up)
+    ///   - Different star = jump to that whole value
+    private func tap(_ star: Int) {
+        let current = currentRating
+        let starDouble = Double(star)
+        let newRating: Double
+        if current == starDouble {
+            // Tapping the exact filled star halves it
+            newRating = starDouble - 0.5
+        } else if current == starDouble - 0.5 {
+            // Tapping the half-filled star fills it
+            newRating = starDouble
+        } else {
+            newRating = starDouble
+        }
+
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
+            if newRating <= 0 {
+                seenService.removeRating(tmdbId: tmdbId)
+            } else {
+                seenService.setRating(tmdbId: tmdbId, stars: newRating)
+            }
+        }
+    }
+
+    /// Icon + color for star index N.
+    private func icon(for star: Int) -> (name: String, filled: Bool) {
+        let starDouble = Double(star)
+        if currentRating >= starDouble {
+            return ("star.fill", true)
+        } else if currentRating >= starDouble - 0.5 {
+            return ("star.leadinghalf.filled", true)
+        } else {
+            return ("star", false)
+        }
     }
 
     var body: some View {
         HStack(spacing: compact ? 2 : 4) {
             ForEach(1...5, id: \.self) { star in
+                let appearance = icon(for: star)
                 Button {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
-                        if currentRating == star {
-                            seenService.removeRating(tmdbId: tmdbId)
-                        } else {
-                            seenService.setRating(tmdbId: tmdbId, stars: star)
-                        }
-                    }
+                    tap(star)
                 } label: {
-                    Image(systemName: star <= currentRating ? "star.fill" : "star")
-                        .font(.system(size: compact ? 12 : 18))
-                        .foregroundColor(star <= currentRating ? FFColors.goldPrimary : FFColors.textTertiary)
-                        .scaleEffect(star <= currentRating ? 1.1 : 1.0)
+                    Image(systemName: appearance.name)
+                        .font(.system(size: compact ? 14 : 20))
+                        .foregroundColor(appearance.filled ? FFColors.goldPrimary : FFColors.textTertiary)
+                        .symbolRenderingMode(.hierarchical)
                 }
                 .buttonStyle(.plain)
             }
@@ -471,5 +526,30 @@ struct StarRatingView: View {
         .padding(.vertical, compact ? 4 : 0)
         .background(compact ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.clear))
         .clipShape(Capsule())
+    }
+}
+
+/// Read-only half-star display for when you want to show someone else's rating,
+/// or show a legacy integer rating on a diary row.
+struct StarRatingDisplay: View {
+    let rating: Double
+    var size: CGFloat = 12
+    var dimColor: Color = FFColors.textTertiary.opacity(0.4)
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(1...5, id: \.self) { star in
+                let starDouble = Double(star)
+                let name: String = {
+                    if rating >= starDouble { return "star.fill" }
+                    if rating >= starDouble - 0.5 { return "star.leadinghalf.filled" }
+                    return "star"
+                }()
+                let color: Color = (rating >= starDouble - 0.5) ? FFColors.goldPrimary : dimColor
+                Image(systemName: name)
+                    .font(.system(size: size))
+                    .foregroundColor(color)
+            }
+        }
     }
 }

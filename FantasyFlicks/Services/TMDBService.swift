@@ -166,6 +166,15 @@ final class TMDBService {
         return try await networkManager.get(url: url)
     }
 
+    /// Fetch TMDB's "You might also like" recommendations for a movie.
+    /// Uses the collaborative filter endpoint (what people who liked this also liked).
+    func getRecommendations(movieId: Int, page: Int = 1) async throws -> TMDBMovieListResponse {
+        guard let url = TMDBEndpoint.movieRecommendations(id: movieId, page: page).url() else {
+            throw NetworkError.invalidURL
+        }
+        return try await networkManager.get(url: url)
+    }
+
     /// Fetch watch providers for a movie
     func getWatchProviders(movieId: Int) async throws -> TMDBWatchProvidersResponse {
         guard let url = TMDBEndpoint.watchProviders(movieId: movieId).url() else {
@@ -218,8 +227,25 @@ final class TMDBService {
     /// Build a Movie Night deck from TMDB based on filters
     func buildMovieNightDeck(filters: MovieNightFilters, excludeTmdbIds: Set<Int> = []) async throws -> [FFMovie] {
         var allMovies: [TMDBMovie] = []
-        var seenIds = excludeTmdbIds
+        // Start with the caller's exclude set (seen movies) PLUS the current user's
+        // live seen set so we never miss a movie they just marked watched.
+        var seenIds = excludeTmdbIds.union(SeenMoviesService.shared.seenTmdbIds)
         let targetSize = filters.deckSize
+
+        // If "include now playing" is OFF, we fetch the now-playing list purely
+        // to build an exclusion set so in-theater movies are filtered out of
+        // ALL other results (discover, trending, classics). Same for trending.
+        if !filters.includeNowPlaying {
+            let nowPlaying = await safeFetch { try await self.getNowPlayingMovies(page: 1) }
+            for movie in nowPlaying.results { seenIds.insert(movie.id) }
+            // Grab a second page for good measure — now-playing is a short list
+            let page2 = await safeFetch { try await self.getNowPlayingMovies(page: 2) }
+            for movie in page2.results { seenIds.insert(movie.id) }
+        }
+        if !filters.includeTrending {
+            let trending = await safeFetch { try await self.getTrendingMovies(timeWindow: "week", page: 1) }
+            for movie in trending.results { seenIds.insert(movie.id) }
+        }
 
         // 1. Fetch popular movies — this is the primary source, let it throw on failure
         //    so the user sees the real error instead of "no movies found"
@@ -248,8 +274,9 @@ final class TMDBService {
             if response.totalPages <= page { break }
         }
 
-        // 3. Only add trending if we don't have enough AND no provider filter is set
-        if allMovies.count < targetSize && filters.includeTrending && filters.watchProviderIds.isEmpty {
+        // 3. Optionally top up from trending (only when trending is allowed
+        //    and we didn't use it as an exclusion set above).
+        if allMovies.count < targetSize && filters.includeTrending {
             let response = await safeFetch { try await self.getTrendingMovies(timeWindow: "week", page: 1) }
             let filtered = response.results.filter { movie in
                 (movie.voteAverage ?? 0) >= filters.minVoteAverage &&
@@ -260,8 +287,8 @@ final class TMDBService {
             allMovies.append(contentsOf: filtered)
         }
 
-        // 4. Only add now playing if we don't have enough AND no provider filter is set
-        if allMovies.count < targetSize && filters.includeNowPlaying && filters.watchProviderIds.isEmpty {
+        // 4. Optionally top up from now playing (only when now-playing is allowed).
+        if allMovies.count < targetSize && filters.includeNowPlaying {
             let response = await safeFetch { try await self.getNowPlayingMovies(page: 1) }
             let filtered = response.results.filter { movie in
                 (movie.voteAverage ?? 0) >= filters.minVoteAverage &&

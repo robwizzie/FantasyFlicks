@@ -21,14 +21,12 @@ final class NavigationCoordinator: ObservableObject {
     /// Currently selected tab
     @Published var selectedTab: Tab = .home
 
-    /// Whether to show create league flow
-    @Published var showCreateLeague = false
-
-    /// Whether to show join league sheet
-    @Published var showJoinLeague = false
-
     /// Session ID to auto-resume when Movie Night tab opens
     @Published var pendingResumeSessionId: String?
+
+    /// Retained for compatibility with the archived Leagues feature; not currently exposed in navigation.
+    @Published var showCreateLeague = false
+    @Published var showJoinLeague = false
 
     // MARK: - Initialization
 
@@ -43,24 +41,6 @@ final class NavigationCoordinator: ObservableObject {
         }
     }
 
-    /// Navigate to leagues tab and show create league
-    func showCreateLeagueFlow() {
-        selectedTab = .leagues
-        // Small delay to let the tab switch complete
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            self.showCreateLeague = true
-        }
-    }
-
-    /// Navigate to leagues tab and show join league
-    func showJoinLeagueFlow() {
-        selectedTab = .leagues
-        // Small delay to let the tab switch complete
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            self.showJoinLeague = true
-        }
-    }
-
     /// Navigate to the Movie Night tab
     func showMovieNightFlow() {
         navigateTo(.movieNights)
@@ -70,6 +50,11 @@ final class NavigationCoordinator: ObservableObject {
     func resumeMovieNightSession(_ sessionId: String) {
         pendingResumeSessionId = sessionId
         navigateTo(.movieNights)
+    }
+
+    /// Navigate to the Friends tab
+    func showFriendsFlow() {
+        navigateTo(.friends)
     }
 }
 

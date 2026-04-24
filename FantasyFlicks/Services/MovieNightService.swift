@@ -107,6 +107,31 @@ final class MovieNightService {
     }
 
     /// Update session filters (host only, while still in lobby)
+    /// Invite a list of friends by directly adding them to a session in the lobby.
+    /// The invited users' Firestore queries for `participantIds arrayContains self`
+    /// will then pick up the session and show it under their "Your Sessions" list.
+    func inviteFriends(sessionId: String, friends: [FFUser]) async throws {
+        guard let host = authService.currentUser else {
+            throw MovieNightError.notAuthenticated
+        }
+        guard !friends.isEmpty else { return }
+
+        // Fire off writes in parallel so we don't serialize N round-trips.
+        let docRef = db.collection("movieNightSessions").document(sessionId)
+
+        // Build an atomic update: arrayUnion participant IDs + merge name map.
+        var updates: [String: Any] = [
+            "participantIds": FieldValue.arrayUnion(friends.map { $0.id })
+        ]
+        for friend in friends {
+            let displayName = friend.displayName.isEmpty ? friend.username : friend.displayName
+            updates["participantNames.\(friend.id)"] = displayName
+        }
+        _ = host // silence unused-variable warning; available if we need host context later.
+
+        try await docRef.updateData(updates)
+    }
+
     func updateFilters(sessionId: String, filters: MovieNightFilters) async throws {
         let data = try Firestore.Encoder().encode(filters)
         try await db.collection("movieNightSessions").document(sessionId).updateData([

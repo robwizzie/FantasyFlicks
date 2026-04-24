@@ -274,9 +274,27 @@ struct MoviesView: View {
 // MARK: - Movie Detail View
 
 struct MovieDetailView: View {
-    let movie: FFMovie
+    /// Internal navigation stack. Tapping a recommendation pushes; the back
+    /// button pops. Avoids the "infinite nested sheets" problem where drilling
+    /// into recommendations stacks up modal after modal.
+    @State private var movieStack: [FFMovie]
+
     @StateObject private var seenService = SeenMoviesService.shared
     @State private var showReviewSheet = false
+    @State private var recommendations: [FFMovie] = []
+    @State private var friendReviews: [MovieReviewItem] = []
+    @State private var publicReviews: [MovieReviewItem] = []
+    @State private var reviewsScope: ReviewsScope = .friends
+
+    init(movie: FFMovie) {
+        _movieStack = State(initialValue: [movie])
+    }
+
+    enum ReviewsScope: String, CaseIterable { case friends = "Friends", all = "All" }
+
+    /// The movie currently being displayed.
+    private var movie: FFMovie { movieStack.last ?? movieStack[0] }
+    private var canGoBack: Bool { movieStack.count > 1 }
 
     private var isSeen: Bool { seenService.isSeen(tmdbId: movie.tmdbId) }
     private var isOnWatchlist: Bool { seenService.isOnWatchlist(tmdbId: movie.tmdbId) }
@@ -287,16 +305,9 @@ struct MovieDetailView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
-                    // Hero backdrop
-                    if let backdropURL = movie.backdropURL {
-                        CachedAsyncImage(url: backdropURL) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            FFColors.backgroundElevated
-                        }
+                    MovieHeroImage(movie: movie)
                         .frame(height: 250)
+                        .clipped()
                         .overlay {
                             LinearGradient(
                                 colors: [.clear, FFColors.backgroundDark],
@@ -304,7 +315,6 @@ struct MovieDetailView: View {
                                 endPoint: .bottom
                             )
                         }
-                    }
 
                     // Content
                     VStack(alignment: .leading, spacing: FFSpacing.xl) {
@@ -369,7 +379,7 @@ struct MovieDetailView: View {
                                     label: isSeen ? "Watched" : "Watch",
                                     isActive: isSeen
                                 ) {
-                                    seenService.toggleSeen(tmdbId: movie.tmdbId)
+                                    seenService.toggleSeen(movie)
                                 }
 
                                 actionTile(
@@ -377,7 +387,7 @@ struct MovieDetailView: View {
                                     label: "Watchlist",
                                     isActive: isOnWatchlist
                                 ) {
-                                    seenService.toggleWatchlist(tmdbId: movie.tmdbId)
+                                    seenService.toggleWatchlist(movie)
                                 }
 
                                 actionTile(
@@ -488,12 +498,209 @@ struct MovieDetailView: View {
                             }
                         }
 
+                        // Reviews section
+                        reviewsSection
+
+                        // You might also like
+                        recommendationsSection
+
                         Spacer(minLength: 100)
                     }
                 }
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: movie.tmdbId) {
+            await loadRecommendations()
+            await loadReviews()
+        }
+        .toolbar {
+            // Internal back button when the user has drilled into a recommendation.
+            // Pops the stack back to the previous movie without adding another sheet.
+            if canGoBack {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            _ = movieStack.popLast()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                        .foregroundColor(FFColors.goldPrimary)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Reviews section
+
+    @ViewBuilder
+    private var reviewsSection: some View {
+        let currentReviews: [MovieReviewItem] = (reviewsScope == .friends) ? friendReviews : publicReviews
+        if !friendReviews.isEmpty || !publicReviews.isEmpty {
+            VStack(alignment: .leading, spacing: FFSpacing.md) {
+                HStack {
+                    Text("Reviews")
+                        .font(FFTypography.headlineSmall)
+                        .foregroundColor(FFColors.textPrimary)
+                    Spacer()
+                    Picker("Scope", selection: $reviewsScope) {
+                        ForEach(ReviewsScope.allCases, id: \.self) { scope in
+                            Text(scope.rawValue).tag(scope)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 160)
+                }
+                .padding(.horizontal)
+
+                if currentReviews.isEmpty {
+                    Text(reviewsScope == .friends ? "None of your friends have reviewed this yet." : "No public reviews yet.")
+                        .font(FFTypography.caption)
+                        .foregroundColor(FFColors.textTertiary)
+                        .padding(.horizontal)
+                } else {
+                    VStack(spacing: FFSpacing.sm) {
+                        ForEach(currentReviews) { review in
+                            reviewRow(review)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+        }
+    }
+
+    private func reviewRow(_ review: MovieReviewItem) -> some View {
+        VStack(alignment: .leading, spacing: FFSpacing.sm) {
+            HStack(spacing: FFSpacing.sm) {
+                // Avatar
+                ZStack {
+                    Circle().fill(FFColors.goldGradient).frame(width: 32, height: 32)
+                    if let icon = review.userAvatarIcon {
+                        Image(systemName: icon).font(.system(size: 14)).foregroundColor(FFColors.backgroundDark)
+                    } else {
+                        Text(review.userName.prefix(1).uppercased())
+                            .font(FFTypography.labelMedium).foregroundColor(FFColors.backgroundDark)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(review.userName)
+                        .font(FFTypography.labelMedium).foregroundColor(FFColors.textPrimary)
+                    HStack(spacing: 6) {
+                        if let rating = review.rating {
+                            StarRatingDisplay(rating: rating, size: 10)
+                        }
+                        if review.isRewatch {
+                            Text("rewatch")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundColor(FFColors.goldPrimary)
+                        }
+                        Text(review.watchedDate, style: .date)
+                            .font(FFTypography.caption)
+                            .foregroundColor(FFColors.textTertiary)
+                    }
+                }
+
+                Spacer()
+            }
+
+            if !review.reviewText.isEmpty {
+                Text(review.reviewText)
+                    .font(FFTypography.bodySmall)
+                    .foregroundColor(FFColors.textSecondary)
+                    .lineLimit(5)
+            }
+        }
+        .padding(FFSpacing.md)
+        .background {
+            RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                .fill(FFColors.backgroundElevated.opacity(0.5))
+                .overlay {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                }
+        }
+    }
+
+    // MARK: - Recommendations section
+
+    @ViewBuilder
+    private var recommendationsSection: some View {
+        if !recommendations.isEmpty {
+            VStack(alignment: .leading, spacing: FFSpacing.md) {
+                Text("You Might Also Like")
+                    .font(FFTypography.headlineSmall)
+                    .foregroundColor(FFColors.textPrimary)
+                    .padding(.horizontal)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: FFSpacing.md) {
+                        ForEach(recommendations.prefix(10)) { rec in
+                            Button {
+                                // Swap the current movie in place instead of
+                                // opening another sheet. Adds to the internal
+                                // stack so "Back" takes the user to this movie.
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                    movieStack.append(rec)
+                                }
+                            } label: {
+                                recommendationCard(rec)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+        }
+    }
+
+    private func recommendationCard(_ movie: FFMovie) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let url = movie.posterURL {
+                CachedAsyncImage(url: url) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 8).fill(FFColors.backgroundElevated)
+                }
+                .frame(width: 110, height: 165)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(FFColors.backgroundElevated)
+                    .frame(width: 110, height: 165)
+                    .overlay {
+                        Image(systemName: "film").foregroundColor(FFColors.textTertiary)
+                    }
+            }
+            Text(movie.title)
+                .font(FFTypography.caption)
+                .foregroundColor(FFColors.textPrimary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .frame(width: 110, alignment: .leading)
+        }
+    }
+
+    // MARK: - Async loaders
+
+    private func loadRecommendations() async {
+        do {
+            let response = try await TMDBService.shared.getRecommendations(movieId: movie.tmdbId, page: 1)
+            recommendations = response.results.map { TMDBService.shared.convertToFFMovie($0) }
+        } catch {
+            recommendations = []
+        }
+    }
+
+    private func loadReviews() async {
+        friendReviews = await MovieReviewsService.shared.friendReviews(for: movie.tmdbId)
+        publicReviews = await MovieReviewsService.shared.publicReviews(for: movie.tmdbId, limit: 50)
     }
 
     private func actionTile(icon: String, label: String, isActive: Bool, action: @escaping () -> Void) -> some View {
@@ -523,6 +730,93 @@ struct MovieDetailView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Movie Hero Image
+
+/// Hero image for the movie detail view.
+/// Tries the backdrop first (if distinct from the poster). If the backdrop
+/// fails to load, falls back to a blurred + darkened poster so the hero
+/// area always renders something nice instead of a flat gray rectangle.
+struct MovieHeroImage: View {
+    let movie: FFMovie
+
+    @State private var image: UIImage?
+    @State private var usingPosterFallback = false
+    @State private var isLoading = true
+
+    private var primaryURL: URL? {
+        // Use the backdrop only if it's a distinct image from the poster.
+        // (TMDB sometimes returns the same path for both; treat that as "no backdrop".)
+        guard let backdropPath = movie.backdropPath else { return nil }
+        if let posterPath = movie.posterPath, posterPath == backdropPath {
+            return nil
+        }
+        return movie.backdropURL
+    }
+
+    private var posterURL: URL? { movie.posterURL }
+
+    var body: some View {
+        Group {
+            if let image {
+                if usingPosterFallback {
+                    ZStack {
+                        Image(uiImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .blur(radius: 20)
+                            .saturation(1.1)
+                        Color.black.opacity(0.35)
+                    }
+                } else {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                }
+            } else {
+                // While loading, or if both URLs are nil, show an elevated background
+                FFColors.backgroundElevated
+                    .overlay {
+                        if isLoading {
+                            InlineLoader(size: 20)
+                        } else {
+                            Image(systemName: "film")
+                                .font(.system(size: 36))
+                                .foregroundColor(FFColors.textTertiary)
+                        }
+                    }
+            }
+        }
+        .task(id: movie.tmdbId) {
+            await loadHero()
+        }
+    }
+
+    private func loadHero() async {
+        isLoading = true
+        image = nil
+        usingPosterFallback = false
+
+        // Try the backdrop first
+        if let primaryURL,
+           let loaded = await ImageCache.shared.image(for: primaryURL) {
+            image = loaded
+            isLoading = false
+            return
+        }
+
+        // Fall back to the poster (rendered blurred as the hero)
+        if let posterURL,
+           let loaded = await ImageCache.shared.image(for: posterURL) {
+            image = loaded
+            usingPosterFallback = true
+            isLoading = false
+            return
+        }
+
+        isLoading = false
     }
 }
 

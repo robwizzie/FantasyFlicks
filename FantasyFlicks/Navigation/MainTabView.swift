@@ -24,16 +24,11 @@ struct MainTabView: View {
                 }
                 .tag(Tab.movieNights)
 
-            ComingSoonTabView(
-                title: "Leagues",
-                icon: "trophy.fill",
-                tagline: "Fantasy leagues are coming soon",
-                description: "Draft movies, compete with friends, and win based on box office. We're focused on Movie Night for now."
-            )
-            .tabItem {
-                Label(Tab.leagues.rawValue, systemImage: Tab.leagues.icon)
-            }
-            .tag(Tab.leagues)
+            FriendsTabView()
+                .tabItem {
+                    Label(Tab.friends.rawValue, systemImage: Tab.friends.icon)
+                }
+                .tag(Tab.friends)
 
             MoviesView()
                 .tabItem {
@@ -57,7 +52,7 @@ struct MainTabView: View {
 enum Tab: String, CaseIterable {
     case home = "Home"
     case movieNights = "Nights"
-    case leagues = "Leagues"
+    case friends = "Friends"
     case movies = "Movies"
     case profile = "Profile"
 
@@ -65,75 +60,19 @@ enum Tab: String, CaseIterable {
         switch self {
         case .home: return "house.fill"
         case .movieNights: return "popcorn.fill"
-        case .leagues: return "trophy.fill"
+        case .friends: return "person.2.fill"
         case .movies: return "film.fill"
         case .profile: return "person.fill"
         }
     }
 }
 
-// MARK: - Coming Soon Tab
+// MARK: - Friends Tab Wrapper
+// Reuses FriendsView but without the sheet-dismiss toolbar button, so it can live in a tab.
 
-struct ComingSoonTabView: View {
-    let title: String
-    let icon: String
-    let tagline: String
-    let description: String
-
-    @ObservedObject private var nav = NavigationCoordinator.shared
-
+struct FriendsTabView: View {
     var body: some View {
-        NavigationStack {
-            ZStack {
-                FFColors.backgroundDark.ignoresSafeArea()
-
-                VStack(spacing: FFSpacing.xxl) {
-                    Spacer()
-
-                    ZStack {
-                        Circle()
-                            .fill(FFColors.goldPrimary.opacity(0.15))
-                            .frame(width: 160, height: 160)
-                            .blur(radius: 40)
-
-                        Image(systemName: icon)
-                            .font(.system(size: 72))
-                            .foregroundStyle(FFColors.goldGradient)
-                    }
-
-                    VStack(spacing: FFSpacing.md) {
-                        Badge(text: "Coming Soon", style: .gold)
-
-                        Text(tagline)
-                            .font(FFTypography.displaySmall)
-                            .foregroundColor(FFColors.textPrimary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, FFSpacing.lg)
-
-                        Text(description)
-                            .font(FFTypography.bodyMedium)
-                            .foregroundColor(FFColors.textSecondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, FFSpacing.xxl)
-                    }
-
-                    GoldButton(
-                        title: "Host Movie Night",
-                        icon: "popcorn.fill",
-                        style: .primary,
-                        size: .large
-                    ) {
-                        nav.navigateTo(.movieNights)
-                    }
-                    .padding(.horizontal, FFSpacing.xxl)
-
-                    Spacer()
-                    Spacer()
-                }
-            }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-        }
+        FriendsView(isEmbeddedInTab: true)
     }
 }
 

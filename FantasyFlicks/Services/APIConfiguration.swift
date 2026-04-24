@@ -108,6 +108,7 @@ enum TMDBEndpoint: Sendable {
     case watchProviders(movieId: Int)
     case discoverForMovieNight(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?)
     case discoverClassics(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?)
+    case movieRecommendations(id: Int, page: Int)
 
     var path: String {
         switch self {
@@ -123,13 +124,20 @@ enum TMDBEndpoint: Sendable {
         case .configuration: return "/configuration"
         case .trending(let timeWindow, _): return "/trending/movie/\(timeWindow)"
         case .watchProviders(let movieId): return "/movie/\(movieId)/watch/providers"
+        case .movieRecommendations(let id, _): return "/movie/\(id)/recommendations"
         }
     }
 
     var queryItems: [URLQueryItem] {
-        var items: [URLQueryItem] = [
-            URLQueryItem(name: "language", value: "en-US")
-        ]
+        // `language=en-US` narrows TMDB metadata to English and — crucially for
+        // search — restricts title matching. We exclude it on the /search/movie
+        // endpoint so partial queries like "dune" match across all regions.
+        var items: [URLQueryItem] = []
+        if case .search = self {
+            // no default language param for search
+        } else {
+            items.append(URLQueryItem(name: "language", value: "en-US"))
+        }
 
         switch self {
         case .discover(let year, let page):
@@ -207,6 +215,8 @@ enum TMDBEndpoint: Sendable {
             if let runtime = minimumRuntime {
                 items.append(URLQueryItem(name: "with_runtime.gte", value: "\(runtime)"))
             }
+        case .movieRecommendations(_, let page):
+            items.append(URLQueryItem(name: "page", value: "\(page)"))
         default:
             break
         }

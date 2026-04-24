@@ -114,7 +114,8 @@ final class ProfileViewModel: ObservableObject {
         username: String?,
         avatarIcon: String? = nil,
         favoriteGenre: String? = nil,
-        bio: String? = nil
+        bio: String? = nil,
+        avatarBase64: String? = nil
     ) async -> Bool {
         guard let userId = authService.currentUser?.id else { return false }
 
@@ -143,6 +144,14 @@ final class ProfileViewModel: ObservableObject {
 
         if let avatarIcon = avatarIcon {
             updates["avatarIcon"] = avatarIcon
+        }
+
+        // Uploaded photo (takes precedence over icon when viewed)
+        if let avatarBase64 {
+            updates["avatarBase64"] = avatarBase64
+        } else {
+            // Allow clearing the uploaded photo
+            updates["avatarBase64"] = NSNull()
         }
 
         if let favoriteGenre = favoriteGenre {
@@ -192,6 +201,49 @@ final class ProfileViewModel: ObservableObject {
         }
     }
 
+    /// Replace the user's favorite movie list (Letterboxd-style, max 4).
+    func updateFavoriteMovies(_ tmdbIds: [Int]) async -> Bool {
+        guard let userId = authService.currentUser?.id else { return false }
+        // Cap to 4 like Letterboxd.
+        let capped = Array(tmdbIds.prefix(4))
+        do {
+            try await db.collection("users").document(userId).updateData([
+                "favoriteMovieIds": capped
+            ])
+            // Update local copy for immediate UI refresh.
+            if var u = user {
+                u.favoriteMovieIds = capped
+                user = u
+            }
+            return true
+        } catch {
+            self.error = "Failed to update favorites: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    func updatePrivacySettings(
+        diaryPrivate: Bool,
+        watchedPrivate: Bool,
+        watchlistPrivate: Bool,
+        ratingsPrivate: Bool
+    ) async -> Bool {
+        guard let userId = authService.currentUser?.id else { return false }
+
+        do {
+            try await db.collection("users").document(userId).updateData([
+                "diaryPrivate": diaryPrivate,
+                "watchedPrivate": watchedPrivate,
+                "watchlistPrivate": watchlistPrivate,
+                "ratingsPrivate": ratingsPrivate
+            ])
+            return true
+        } catch {
+            self.error = "Failed to update privacy: \(error.localizedDescription)"
+            return false
+        }
+    }
+
     func signOut() {
         authService.signOut()
         user = nil
@@ -220,15 +272,12 @@ final class ProfileViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Friend Management
+    // MARK: - Friend Management (delegates to FriendsService)
 
     func addFriend(userId friendId: String) async -> Bool {
-        guard let userId = authService.currentUser?.id else { return false }
-
         do {
-            try await db.collection("users").document(userId).updateData([
-                "friendIds": FieldValue.arrayUnion([friendId])
-            ])
+            let friend = try await FriendsService.shared.fetchUser(id: friendId)
+            try await FriendsService.shared.addFriend(friend)
             successMessage = "Friend added!"
             return true
         } catch {
@@ -238,12 +287,8 @@ final class ProfileViewModel: ObservableObject {
     }
 
     func removeFriend(userId friendId: String) async -> Bool {
-        guard let userId = authService.currentUser?.id else { return false }
-
         do {
-            try await db.collection("users").document(userId).updateData([
-                "friendIds": FieldValue.arrayRemove([friendId])
-            ])
+            try await FriendsService.shared.removeFriend(userId: friendId)
             return true
         } catch {
             self.error = "Failed to remove friend: \(error.localizedDescription)"
@@ -252,13 +297,8 @@ final class ProfileViewModel: ObservableObject {
     }
 
     func blockUser(userId blockedId: String) async -> Bool {
-        guard let userId = authService.currentUser?.id else { return false }
-
         do {
-            try await db.collection("users").document(userId).updateData([
-                "blockedUserIds": FieldValue.arrayUnion([blockedId]),
-                "friendIds": FieldValue.arrayRemove([blockedId])
-            ])
+            try await FriendsService.shared.blockUser(blockedId)
             return true
         } catch {
             self.error = "Failed to block user: \(error.localizedDescription)"
@@ -310,67 +350,25 @@ final class ProfileViewModel: ObservableObject {
     }
 
     private func loadAchievements() {
-        // Define all available achievements
-        let allAchievements: [AchievementDisplay] = [
-            AchievementDisplay(id: "first_draft", icon: "star.fill", name: "First Draft", description: "Complete your first draft", isUnlocked: false),
-            AchievementDisplay(id: "hot_streak", icon: "flame.fill", name: "Hot Streak", description: "Win 3 leagues in a row", isUnlocked: false),
-            AchievementDisplay(id: "champion", icon: "crown.fill", name: "Champion", description: "Win a league", isUnlocked: false),
-            AchievementDisplay(id: "prophet", icon: "eye.fill", name: "Prophet", description: "Predict an Oscar winner", isUnlocked: false),
-            AchievementDisplay(id: "social_butterfly", icon: "person.3.fill", name: "Social Butterfly", description: "Join 5 leagues", isUnlocked: false),
-            AchievementDisplay(id: "movie_buff", icon: "film.fill", name: "Movie Buff", description: "Draft 50 movies", isUnlocked: false)
-        ]
-
-        let unlockedIds = user?.achievementIds ?? authService.currentUser?.achievementIds ?? []
-
-        achievements = allAchievements.map { achievement in
+        // Achievement catalog comes from AchievementService now. We expose a
+        // mapped display-friendly array for the existing Profile UI, but the
+        // underlying progress / unlock state lives in AchievementService.
+        let progress = AchievementService.shared.allProgress()
+        achievements = progress.map { p in
             AchievementDisplay(
-                id: achievement.id,
-                icon: achievement.icon,
-                name: achievement.name,
-                description: achievement.description,
-                isUnlocked: unlockedIds.contains(achievement.id)
+                id: p.definition.id,
+                icon: p.definition.icon,
+                name: p.definition.name,
+                description: p.definition.description,
+                isUnlocked: p.isUnlocked
             )
         }
+        // Re-evaluate unlocks whenever the profile screen refreshes.
+        AchievementService.shared.evaluateUnlocks()
     }
 
     private func parseUser(from data: [String: Any], id: String) -> FFUser {
-        let createdAt: Date
-        if let timestamp = data["createdAt"] as? Timestamp {
-            createdAt = timestamp.dateValue()
-        } else {
-            createdAt = Date()
-        }
-
-        let lastActiveAt: Date
-        if let timestamp = data["lastActiveAt"] as? Timestamp {
-            lastActiveAt = timestamp.dateValue()
-        } else {
-            lastActiveAt = Date()
-        }
-
-        return FFUser(
-            id: id,
-            username: data["username"] as? String ?? "user",
-            displayName: data["displayName"] as? String ?? "User",
-            email: data["email"] as? String ?? "",
-            avatarURL: (data["avatarURL"] as? String).flatMap { URL(string: $0) },
-            avatarIcon: data["avatarIcon"] as? String,
-            totalLeagues: data["totalLeagues"] as? Int ?? 0,
-            leaguesWon: data["leaguesWon"] as? Int ?? 0,
-            totalMoviesDrafted: data["totalMoviesDrafted"] as? Int ?? 0,
-            bestMovieScore: data["bestMovieScore"] as? Double,
-            rankingPoints: data["rankingPoints"] as? Int ?? 0,
-            achievementIds: data["achievementIds"] as? [String] ?? [],
-            notificationsEnabled: data["notificationsEnabled"] as? Bool ?? true,
-            draftReminderMinutes: data["draftReminderMinutes"] as? Int ?? 30,
-            friendIds: data["friendIds"] as? [String] ?? [],
-            blockedUserIds: data["blockedUserIds"] as? [String] ?? [],
-            hasCompletedProfileSetup: data["hasCompletedProfileSetup"] as? Bool ?? false,
-            favoriteGenre: data["favoriteGenre"] as? String,
-            bio: data["bio"] as? String,
-            createdAt: createdAt,
-            lastActiveAt: lastActiveAt
-        )
+        FFUser(fromFirestore: data, id: id)
     }
 
     func clearMessages() {

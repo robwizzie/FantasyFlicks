@@ -15,6 +15,10 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
     var email: String
     var avatarURL: URL?
     var avatarIcon: String? // SF Symbol name for default avatars
+    /// Base64-encoded JPEG of the user's uploaded profile picture (256x256).
+    /// Stored on the user doc so friends can see it. ~15KB per user.
+    /// Takes display precedence over avatarIcon and initials.
+    var avatarBase64: String?
 
     // MARK: - Profile Stats
 
@@ -62,6 +66,18 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
     /// User's bio/about me
     var bio: String?
 
+    // MARK: - Privacy
+    // Default is false — visible to friends. true means only this user can see it.
+
+    var diaryPrivate: Bool
+    var watchedPrivate: Bool
+    var watchlistPrivate: Bool
+    var ratingsPrivate: Bool
+
+    /// Up to 4 TMDB movie IDs the user has pinned as favorites (Letterboxd-style).
+    /// Rendered prominently at the top of their profile.
+    var favoriteMovieIds: [Int]
+
     // MARK: - Metadata
 
     let createdAt: Date
@@ -87,6 +103,7 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
         email: String,
         avatarURL: URL? = nil,
         avatarIcon: String? = nil,
+        avatarBase64: String? = nil,
         totalLeagues: Int = 0,
         leaguesWon: Int = 0,
         totalMoviesDrafted: Int = 0,
@@ -100,6 +117,11 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
         hasCompletedProfileSetup: Bool = false,
         favoriteGenre: String? = nil,
         bio: String? = nil,
+        diaryPrivate: Bool = false,
+        watchedPrivate: Bool = false,
+        watchlistPrivate: Bool = false,
+        ratingsPrivate: Bool = false,
+        favoriteMovieIds: [Int] = [],
         createdAt: Date = Date(),
         lastActiveAt: Date = Date()
     ) {
@@ -109,6 +131,7 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
         self.email = email
         self.avatarURL = avatarURL
         self.avatarIcon = avatarIcon
+        self.avatarBase64 = avatarBase64
         self.totalLeagues = totalLeagues
         self.leaguesWon = leaguesWon
         self.totalMoviesDrafted = totalMoviesDrafted
@@ -122,6 +145,11 @@ struct FFUser: Codable, Identifiable, Hashable, Sendable {
         self.hasCompletedProfileSetup = hasCompletedProfileSetup
         self.favoriteGenre = favoriteGenre
         self.bio = bio
+        self.diaryPrivate = diaryPrivate
+        self.watchedPrivate = watchedPrivate
+        self.watchlistPrivate = watchlistPrivate
+        self.ratingsPrivate = ratingsPrivate
+        self.favoriteMovieIds = favoriteMovieIds
         self.createdAt = createdAt
         self.lastActiveAt = lastActiveAt
     }

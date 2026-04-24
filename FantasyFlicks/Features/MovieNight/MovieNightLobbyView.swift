@@ -10,6 +10,7 @@ import SwiftUI
 struct MovieNightLobbyView: View {
     @ObservedObject var viewModel: MovieNightViewModel
     @State private var showShareSheet = false
+    @State private var showInviteFriends = false
     @State private var showEditSettings = false
 
     var body: some View {
@@ -112,39 +113,47 @@ struct MovieNightLobbyView: View {
                     .foregroundStyle(FFColors.goldGradient)
                     .tracking(8)
 
-                HStack(spacing: FFSpacing.md) {
+                HStack(spacing: FFSpacing.sm) {
+                    // Invite friends button (primary)
+                    Button {
+                        showInviteFriends = true
+                    } label: {
+                        HStack(spacing: FFSpacing.xs) {
+                            Image(systemName: "person.2.fill")
+                            Text("Invite Friends")
+                        }
+                        .font(FFTypography.labelMedium)
+                        .foregroundColor(FFColors.backgroundDark)
+                        .padding(.horizontal, FFSpacing.lg)
+                        .padding(.vertical, FFSpacing.sm)
+                        .background(FFColors.goldGradient)
+                        .clipShape(Capsule())
+                    }
+
                     // Copy button
                     Button {
                         if let code = viewModel.session?.inviteCode {
                             UIPasteboard.general.string = code
                         }
                     } label: {
-                        HStack(spacing: FFSpacing.sm) {
-                            Image(systemName: "doc.on.doc")
-                            Text("Copy")
-                        }
-                        .font(FFTypography.labelMedium)
-                        .foregroundColor(FFColors.goldPrimary)
-                        .padding(.horizontal, FFSpacing.lg)
-                        .padding(.vertical, FFSpacing.sm)
-                        .background(FFColors.goldPrimary.opacity(0.15))
-                        .clipShape(Capsule())
+                        Image(systemName: "doc.on.doc")
+                            .font(FFTypography.labelMedium)
+                            .foregroundColor(FFColors.goldPrimary)
+                            .frame(width: 40, height: 36)
+                            .background(FFColors.goldPrimary.opacity(0.15))
+                            .clipShape(Capsule())
                     }
 
                     // Share button
                     Button {
                         showShareSheet = true
                     } label: {
-                        HStack(spacing: FFSpacing.sm) {
-                            Image(systemName: "square.and.arrow.up")
-                            Text("Share")
-                        }
-                        .font(FFTypography.labelMedium)
-                        .foregroundColor(FFColors.goldPrimary)
-                        .padding(.horizontal, FFSpacing.lg)
-                        .padding(.vertical, FFSpacing.sm)
-                        .background(FFColors.goldPrimary.opacity(0.15))
-                        .clipShape(Capsule())
+                        Image(systemName: "square.and.arrow.up")
+                            .font(FFTypography.labelMedium)
+                            .foregroundColor(FFColors.goldPrimary)
+                            .frame(width: 40, height: 36)
+                            .background(FFColors.goldPrimary.opacity(0.15))
+                            .clipShape(Capsule())
                     }
                 }
             }
@@ -153,6 +162,11 @@ struct MovieNightLobbyView: View {
         .sheet(isPresented: $showShareSheet) {
             if let code = viewModel.session?.inviteCode {
                 ShareSheet(items: ["Join my Movie Night on FantasyFlicks! Code: \(code)"])
+            }
+        }
+        .sheet(isPresented: $showInviteFriends) {
+            if let session = viewModel.session {
+                InviteFriendsSheet(sessionId: session.id, inviteCode: session.inviteCode)
             }
         }
     }

@@ -28,7 +28,11 @@ struct MovieNightSwipeView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if !viewModel.deckMovies.isEmpty {
-                    Text("\(viewModel.currentCardIndex)/\(viewModel.deckMovies.count)")
+                    // Clamp to the deck size so we never display something
+                    // nonsensical like "40/25" if state gets out of sync.
+                    let total = viewModel.deckMovies.count
+                    let current = min(viewModel.currentCardIndex, total)
+                    Text("\(current)/\(total)")
                         .font(FFTypography.labelMedium)
                         .foregroundColor(FFColors.textSecondary)
                 }
@@ -55,13 +59,24 @@ struct MovieNightSwipeView: View {
                 currentIndex: viewModel.currentCardIndex,
                 providers: viewModel.movieProviders,
                 seenMovies: viewModel.seenMovieIds,
+                watchlistMovies: SeenMoviesService.shared.watchlist,
                 onSwipe: { direction in
                     Task { await viewModel.swipe(direction: direction) }
                 },
                 onToggleSeen: { tmdbId in
                     viewModel.toggleSeenIt(tmdbId: tmdbId)
-                    // Also persist to global seen list
-                    SeenMoviesService.shared.toggleSeen(tmdbId: tmdbId)
+                    if let movie = viewModel.deckMovies.first(where: { $0.tmdbId == tmdbId }) {
+                        SeenMoviesService.shared.toggleSeen(movie)
+                    } else {
+                        SeenMoviesService.shared.toggleSeen(tmdbId: tmdbId)
+                    }
+                },
+                onToggleWatchlist: { tmdbId in
+                    if let movie = viewModel.deckMovies.first(where: { $0.tmdbId == tmdbId }) {
+                        SeenMoviesService.shared.toggleWatchlist(movie)
+                    } else {
+                        SeenMoviesService.shared.toggleWatchlist(tmdbId: tmdbId)
+                    }
                 },
                 onTapDetail: { movie in
                     selectedMovieForDetail = movie
@@ -132,7 +147,7 @@ struct MovieNightSwipeView: View {
             ) {
                 if let movie = currentMovie {
                     viewModel.toggleSeenIt(tmdbId: movie.tmdbId)
-                    SeenMoviesService.shared.toggleSeen(tmdbId: movie.tmdbId)
+                    SeenMoviesService.shared.toggleSeen(movie)
                 }
             }
 
@@ -220,14 +235,14 @@ struct MovieNightSwipeView: View {
                 .foregroundColor(FFColors.textPrimary)
 
             if viewModel.allParticipantsFinished {
-                Text("Computing results...")
+                Text("Computing results…")
                     .font(FFTypography.bodyMedium)
                     .foregroundColor(FFColors.textSecondary)
 
                 ProgressView()
                     .tint(FFColors.goldPrimary)
             } else {
-                Text("Waiting for others to finish swiping...")
+                Text("Waiting for others to finish swiping…")
                     .font(FFTypography.bodyMedium)
                     .foregroundColor(FFColors.textSecondary)
 
@@ -257,6 +272,29 @@ struct MovieNightSwipeView: View {
                         }
                     }
                 }
+
+                // Host / solo users can always force results — don't let anyone
+                // get stuck waiting on a flaky connection.
+                if viewModel.isHost {
+                    GoldButton(
+                        title: "See Results Now",
+                        icon: "sparkles",
+                        style: .primary,
+                        size: .medium
+                    ) {
+                        Task { await viewModel.finishNow() }
+                    }
+                    .padding(.horizontal, FFSpacing.xxl)
+                    .padding(.top, FFSpacing.md)
+                }
+            }
+        }
+        .task {
+            // If you're solo or everyone's already finished by the time we render
+            // this view, transition to results automatically instead of making the
+            // host tap a button.
+            if viewModel.allParticipantsFinished && viewModel.isHost {
+                await viewModel.finishNow()
             }
         }
     }

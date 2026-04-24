@@ -17,6 +17,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UISceneDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         FirebaseApp.configure()
+        // Initialize NotificationManager early so UNUserNotificationCenter.delegate is set
+        // before any notifications could be delivered (e.g., tap from a prior run).
+        Task { @MainActor in
+            _ = NotificationManager.shared
+        }
         return true
     }
 
@@ -52,16 +57,22 @@ struct FantasyFlicksApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                if authService.isInitializing {
-                    SplashScreen()
-                } else if !authService.isAuthenticated {
-                    OnboardingView()
-                } else if !authService.hasCompletedProfileSetup {
-                    ProfileSetupView()
-                } else {
-                    MainTabView()
+            ZStack {
+                Group {
+                    if authService.isInitializing {
+                        SplashScreen()
+                    } else if !authService.isAuthenticated {
+                        OnboardingView()
+                    } else if !authService.hasCompletedProfileSetup {
+                        ProfileSetupView()
+                    } else {
+                        MainTabView()
+                    }
                 }
+
+                // Global overlay that fires whenever any achievement unlocks.
+                // Hit testing is managed inside the overlay itself so it stays reactive.
+                AchievementUnlockOverlay()
             }
             .ffTheme()
             .animation(.easeInOut(duration: 0.35), value: authService.isInitializing)

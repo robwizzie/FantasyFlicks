@@ -87,27 +87,59 @@ final class MoviesViewModel: ObservableObject {
         isLoadingMore = false
     }
 
-    /// Search movies by query
+    /// Search movies by query. Fetches the first two TMDB pages in parallel,
+    /// deduplicates, and reorders so substring matches against the query
+    /// (case-insensitive) rank above the rest.
     func searchMovies(query: String) async {
-        guard !query.isEmpty else {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
             searchResults = []
             return
         }
 
         isSearching = true
+        defer { isSearching = false }
+
+        async let page1 = TMDBService.shared.searchMovies(query: trimmed, page: 1)
+        async let page2 = TMDBService.shared.searchMovies(query: trimmed, page: 2)
 
         do {
-            let response = try await TMDBService.shared.searchMovies(query: query, page: 1)
+            let results1 = try await page1
+            // Page 2 may legitimately fail (end of results) — don't let that poison the search.
+            let results2 = (try? await page2)?.results ?? []
 
-            searchResults = response.results.map { tmdbMovie in
-                TMDBService.shared.convertToFFMovie(tmdbMovie)
+            var seen = Set<Int>()
+            let combined: [TMDBMovie] = (results1.results + results2).filter { seen.insert($0.id).inserted }
+
+            let lowerQuery = trimmed.lowercased()
+            let scored = combined.map { movie -> (TMDBMovie, Int) in
+                let title = movie.title.lowercased()
+                let original = movie.originalTitle?.lowercased() ?? ""
+                let voteCount = movie.voteCount ?? 0
+
+                // Score:
+                //   -3 exact title match   -> top of list
+                //   -2 title starts with   -> near top
+                //   -1 contains query      -> above others
+                //    0 no title hit        -> use vote count as tiebreaker below
+                var score = 0
+                if title == lowerQuery || original == lowerQuery {
+                    score = -3
+                } else if title.hasPrefix(lowerQuery) || original.hasPrefix(lowerQuery) {
+                    score = -2
+                } else if title.contains(lowerQuery) || original.contains(lowerQuery) {
+                    score = -1
+                }
+                // Use vote count as a secondary signal so well-known films bubble up.
+                return (movie, score * 1_000_000 - voteCount)
             }
 
+            let ordered = scored.sorted { $0.1 < $1.1 }.map { $0.0 }
+
+            searchResults = ordered.map { TMDBService.shared.convertToFFMovie($0) }
         } catch {
             searchResults = []
         }
-
-        isSearching = false
     }
 
     /// Clear search results

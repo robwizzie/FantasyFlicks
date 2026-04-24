@@ -239,12 +239,12 @@ struct MovieNightEntryView: View {
     }
 
     private func sessionRow(session: MovieNightSession) -> some View {
-        HStack(spacing: FFSpacing.md) {
+        HStack(alignment: .center, spacing: FFSpacing.md) {
             // Main tappable area
             Button {
                 viewModel.resumeSession(session)
             } label: {
-                HStack(spacing: FFSpacing.md) {
+                HStack(alignment: .center, spacing: FFSpacing.md) {
                     Image(systemName: session.status.iconName)
                         .font(.system(size: 22))
                         .foregroundColor(statusColor(for: session.status))
@@ -253,28 +253,28 @@ struct MovieNightEntryView: View {
                         .clipShape(Circle())
 
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(session.participantNames.values.joined(separator: ", "))
-                                .font(FFTypography.labelMedium)
-                                .foregroundColor(FFColors.textPrimary)
-                                .lineLimit(1)
+                        Text(session.participantNames.values.joined(separator: ", "))
+                            .font(FFTypography.labelMedium)
+                            .foregroundColor(FFColors.textPrimary)
+                            .lineLimit(1)
 
-                            Spacer(minLength: FFSpacing.sm)
-
-                            Badge(text: session.status.displayName,
-                                  style: session.status == .results ? .gold : .default)
-                        }
-
-                        HStack(spacing: FFSpacing.md) {
+                        HStack(spacing: FFSpacing.sm) {
                             Label("\(session.participantCount)", systemImage: "person.2.fill")
                                 .font(FFTypography.caption)
                                 .foregroundColor(FFColors.textTertiary)
+
+                            Text("·").foregroundColor(FFColors.textTertiary)
 
                             Text(session.createdAt, style: .relative)
                                 .font(FFTypography.caption)
                                 .foregroundColor(FFColors.textTertiary)
                         }
                     }
+
+                    Spacer(minLength: FFSpacing.sm)
+
+                    Badge(text: session.status.displayName,
+                          style: session.status == .results ? .gold : .default)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -294,7 +294,7 @@ struct MovieNightEntryView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, FFSpacing.md)
-        .padding(.vertical, FFSpacing.sm)
+        .padding(.vertical, FFSpacing.md)
         .background {
             RoundedRectangle(cornerRadius: FFCornerRadius.medium)
                 .fill(FFColors.backgroundElevated.opacity(0.5))

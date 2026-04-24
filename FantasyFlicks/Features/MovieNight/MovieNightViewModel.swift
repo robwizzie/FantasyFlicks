@@ -121,6 +121,16 @@ final class MovieNightViewModel: ObservableObject {
             session = newSession
             setupListeners(sessionId: newSession.id)
             currentPhase = .lobby
+
+            // Schedule a "still waiting" reminder in 30 minutes.
+            // Cancelled when the host starts swiping or the session finishes.
+            await NotificationManager.shared.schedule(
+                id: "movie-night-waiting-\(newSession.id)",
+                title: "Your Movie Night is waiting 🍿",
+                body: "Jump back in to start swiping with friends.",
+                afterMinutes: 30,
+                userInfo: ["tab": Tab.movieNights.rawValue, "sessionId": newSession.id]
+            )
         } catch {
             self.error = error.localizedDescription
         }
@@ -189,15 +199,18 @@ final class MovieNightViewModel: ObservableObject {
         do {
             // Snapshot filters before any async work so listener can't change them
             let filters = session.filters
+            // Always read the live seen set from the service — the ViewModel's
+            // local copy can be stale after a Letterboxd import or settings change.
+            let liveSeenIds = SeenMoviesService.shared.seenTmdbIds
             let excludeIds: Set<Int>
             switch filters.excludeSeenMode {
             case .none:
                 excludeIds = []
             case .mineOnly:
-                excludeIds = seenMovieIds
+                excludeIds = liveSeenIds
             case .everyoneInParty:
                 // Union of ALL participants' seen lists (uploaded on join)
-                excludeIds = session.allParticipantsSeenIds.union(seenMovieIds)
+                excludeIds = session.allParticipantsSeenIds.union(liveSeenIds)
             }
 
             let movies = try await tmdbService.buildMovieNightDeck(filters: filters, excludeTmdbIds: excludeIds)
@@ -226,6 +239,9 @@ final class MovieNightViewModel: ObservableObject {
 
             // Write deck to Firestore and transition status
             try await movieNightService.startSession(sessionId: session.id, deckTmdbIds: tmdbIds)
+
+            // Swiping started — cancel the "waiting" reminder
+            NotificationManager.shared.cancel(id: "movie-night-waiting-\(session.id)")
 
             // Fetch providers for the deck
             await fetchProviders(for: movies)
@@ -399,11 +415,30 @@ final class MovieNightViewModel: ObservableObject {
                         Task { await self.loadDeckMovies() }
                     }
                 case .results:
-                    if self.currentPhase != .results {
+                    let wasTransitioning = self.currentPhase != .results
+                    if wasTransitioning {
                         self.currentPhase = .results
                         // Only compute if deck is loaded
                         if !self.deckMovies.isEmpty {
                             self.computeResults()
+                        }
+                        // Fire a local notification only if the app is in the background
+                        // (otherwise user is already seeing the results screen).
+                        if UIApplication.shared.applicationState != .active,
+                           let sessionId = updatedSession?.id {
+                            Task {
+                                await NotificationManager.shared.schedule(
+                                    id: "movie-night-results-\(sessionId)",
+                                    title: "Movie Night results are in! 🏆",
+                                    body: "Come see what your group picked.",
+                                    afterMinutes: 0,
+                                    userInfo: ["tab": Tab.movieNights.rawValue, "sessionId": sessionId]
+                                )
+                            }
+                        }
+                        // Clean up the waiting reminder if it's still scheduled
+                        if let sessionId = updatedSession?.id {
+                            NotificationManager.shared.cancel(id: "movie-night-waiting-\(sessionId)")
                         }
                     }
                 default:
@@ -524,6 +559,17 @@ final class MovieNightViewModel: ObservableObject {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    /// Host-initiated "Show Results Now" — bypasses the participant-progress
+    /// check so a stuck session can always move forward. Also computes results
+    /// locally and transitions phase even if the Firestore write fails, so the
+    /// current user never gets stranded on the waiting screen.
+    func finishNow() async {
+        guard let session, isHost else { return }
+        try? await movieNightService.completeSession(sessionId: session.id)
+        computeResults()
+        currentPhase = .results
     }
 }
 
