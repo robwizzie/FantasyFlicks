@@ -4,10 +4,12 @@
 //
 //  Letterboxd-style favorites editor. Users pick up to 4 pinned movies
 //  from their existing watched/watchlist/ratings lists or by searching
-//  TMDB. Order is preserved as the user taps.
+//  TMDB, drag to reorder them, and optionally pick an alternate poster
+//  for any pinned title that has multiple artworks on TMDB.
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct FavoritesEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -20,6 +22,7 @@ struct FavoritesEditorSheet: View {
     @State private var searchResults: [FFMovie] = []
     @State private var isSearching = false
     @State private var isSaving = false
+    @State private var posterPickerTarget: Int?
 
     init(viewModel: ProfileViewModel, initialIds: [Int]) {
         self.viewModel = viewModel
@@ -34,6 +37,7 @@ struct FavoritesEditorSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: FFSpacing.xl) {
                         selectionStrip
+                        reorderHint
                         searchField
                         pickerList
                         Spacer(minLength: 80)
@@ -77,6 +81,12 @@ struct FavoritesEditorSheet: View {
                     }
                 }
             }
+            .sheet(item: Binding(
+                get: { posterPickerTarget.map { PosterPickerContext(tmdbId: $0) } },
+                set: { posterPickerTarget = $0?.tmdbId }
+            )) { context in
+                AlternatePosterPickerSheet(tmdbId: context.tmdbId)
+            }
         }
     }
 
@@ -98,7 +108,16 @@ struct FavoritesEditorSheet: View {
             HStack(spacing: FFSpacing.sm) {
                 ForEach(0..<4, id: \.self) { slot in
                     if slot < selectedIds.count {
-                        selectedTile(tmdbId: selectedIds[slot])
+                        let tmdbId = selectedIds[slot]
+                        selectedTile(tmdbId: tmdbId)
+                            .onDrag {
+                                // Ship the index so the drop zone knows what moved.
+                                NSItemProvider(object: "\(slot)" as NSString)
+                            }
+                            .onDrop(of: [.plainText], delegate: ReorderDropDelegate(
+                                destinationIndex: slot,
+                                selectedIds: $selectedIds
+                            ))
                     } else {
                         emptyTile
                     }
@@ -108,12 +127,21 @@ struct FavoritesEditorSheet: View {
         }
     }
 
+    private var reorderHint: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "hand.draw")
+                .font(.system(size: 11, weight: .semibold))
+            Text("Hold and drag to reorder · Tap the paintbrush to swap poster")
+                .font(FFTypography.caption)
+        }
+        .foregroundColor(FFColors.textTertiary)
+        .padding(.horizontal)
+    }
+
     private func selectedTile(tmdbId: Int) -> some View {
-        Button {
-            withAnimation { selectedIds.removeAll { $0 == tmdbId } }
-        } label: {
+        ZStack(alignment: .topTrailing) {
             Group {
-                if let posterURL = seenService.cachedMovie(for: tmdbId)?.posterURL {
+                if let posterURL = seenService.favoritePosterURL(for: tmdbId) {
                     CachedAsyncImage(url: posterURL) { image in
                         image.resizable().aspectRatio(contentMode: .fill)
                     } placeholder: {
@@ -133,19 +161,36 @@ struct FavoritesEditorSheet: View {
             .aspectRatio(2.0 / 3.0, contentMode: .fit)
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(alignment: .topTrailing) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
-                    .foregroundColor(.white)
-                    .background(Circle().fill(Color.black.opacity(0.55)))
-                    .padding(4)
-            }
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(FFColors.goldPrimary, lineWidth: 1.5)
             }
+
+            // Two corner actions: remove and alt-poster picker.
+            VStack(spacing: 4) {
+                Button {
+                    withAnimation { selectedIds.removeAll { $0 == tmdbId } }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.white)
+                        .background(Circle().fill(Color.black.opacity(0.55)))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    posterPickerTarget = tmdbId
+                } label: {
+                    Image(systemName: "paintbrush.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(FFColors.goldPrimary)
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(Color.black.opacity(0.55)))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(4)
         }
-        .buttonStyle(.plain)
     }
 
     private var emptyTile: some View {
@@ -365,5 +410,164 @@ struct FavoritesEditorSheet: View {
         defer { isSaving = false }
         let ok = await viewModel.updateFavoriteMovies(selectedIds)
         if ok { dismiss() }
+    }
+}
+
+// MARK: - Reorder Drop Delegate
+
+/// Drop delegate that swaps the dragged slot into the hovered destination.
+/// Kept simple — SwiftUI's built-in `.onMove` requires editing inside a List,
+/// which doesn't fit the horizontal 4-tile layout.
+private struct ReorderDropDelegate: DropDelegate {
+    let destinationIndex: Int
+    @Binding var selectedIds: [Int]
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let provider = info.itemProviders(for: [.plainText]).first else { return false }
+        _ = provider.loadObject(ofClass: NSString.self) { item, _ in
+            guard let indexString = item as? String,
+                  let sourceIndex = Int(indexString),
+                  sourceIndex != destinationIndex,
+                  sourceIndex < selectedIds.count,
+                  destinationIndex < selectedIds.count
+            else { return }
+            Task { @MainActor in
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                    let moved = selectedIds.remove(at: sourceIndex)
+                    selectedIds.insert(moved, at: destinationIndex)
+                }
+            }
+        }
+        return true
+    }
+}
+
+// MARK: - Alternate Poster Picker
+
+private struct PosterPickerContext: Identifiable {
+    let tmdbId: Int
+    var id: Int { tmdbId }
+}
+
+/// Lets the user swap the poster shown for a pinned favorite to any of the
+/// alternate artworks TMDB has on file. Persists via
+/// `SeenMoviesService.setFavoritePosterOverride`.
+struct AlternatePosterPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let tmdbId: Int
+    @StateObject private var seenService = SeenMoviesService.shared
+
+    @State private var posters: [TMDBImage] = []
+    @State private var isLoading = true
+    @State private var selectedPath: String?
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                FFColors.backgroundDark.ignoresSafeArea()
+
+                if isLoading && posters.isEmpty {
+                    ProgressView()
+                        .tint(FFColors.goldPrimary)
+                } else if posters.isEmpty {
+                    VStack(spacing: FFSpacing.md) {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.system(size: 40))
+                            .foregroundColor(FFColors.textTertiary)
+                        Text("No alternate posters available")
+                            .font(FFTypography.bodyMedium)
+                            .foregroundColor(FFColors.textSecondary)
+                    }
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: [
+                            GridItem(.flexible(), spacing: FFSpacing.md),
+                            GridItem(.flexible(), spacing: FFSpacing.md),
+                            GridItem(.flexible(), spacing: FFSpacing.md)
+                        ], spacing: FFSpacing.md) {
+                            ForEach(posters) { poster in
+                                posterTile(poster)
+                            }
+                        }
+                        .padding(FFSpacing.md)
+                    }
+                }
+            }
+            .navigationTitle("Choose Poster")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(FFColors.textSecondary)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Default") {
+                        seenService.setFavoritePosterOverride(tmdbId: tmdbId, posterPath: nil)
+                        dismiss()
+                    }
+                    .foregroundColor(FFColors.goldPrimary)
+                }
+            }
+            .task {
+                selectedPath = seenService.favoritePosterOverrides[tmdbId]
+                await loadPosters()
+            }
+        }
+    }
+
+    private func posterTile(_ poster: TMDBImage) -> some View {
+        let isActive = poster.filePath == selectedPath
+        let url = URL(string: "\(APIConfiguration.TMDB.imageBaseURL)/\(APIConfiguration.TMDB.PosterSize.medium.rawValue)\(poster.filePath)")
+
+        return Button {
+            seenService.setFavoritePosterOverride(tmdbId: tmdbId, posterPath: poster.filePath)
+            selectedPath = poster.filePath
+            dismiss()
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if let url {
+                        CachedAsyncImage(url: url) { image in
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(FFColors.backgroundElevated)
+                                .shimmer()
+                        }
+                    } else {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(FFColors.backgroundElevated)
+                    }
+                }
+                .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(isActive ? FFColors.goldPrimary : Color.white.opacity(0.1),
+                                lineWidth: isActive ? 2.5 : 0.5)
+                }
+
+                if isActive {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(FFColors.goldPrimary)
+                        .background(Circle().fill(FFColors.backgroundDark))
+                        .padding(4)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func loadPosters() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let response = try await TMDBService.shared.getMovieImages(id: tmdbId)
+            // TMDB returns posters scored by vote average — surface the best ones first.
+            posters = response.posters.sorted { ($0.voteAverage ?? 0) > ($1.voteAverage ?? 0) }
+        } catch {
+            posters = []
+        }
     }
 }

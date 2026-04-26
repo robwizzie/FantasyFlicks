@@ -10,6 +10,10 @@ import SwiftUI
 struct MovieNightSwipeView: View {
     @ObservedObject var viewModel: MovieNightViewModel
     @State private var selectedMovieForDetail: FFMovie?
+    /// When set, triggers a programmatic fly-off animation on the top card so
+    /// tapping the check or X buttons shows the SKIP/WATCH stamp exactly like
+    /// a real swipe does.
+    @State private var pendingProgrammaticSwipe: SwipeDirection?
 
     var body: some View {
         ZStack {
@@ -25,6 +29,13 @@ struct MovieNightSwipeView: View {
         }
         .navigationTitle("Swipe!")
         .navigationBarTitleDisplayMode(.inline)
+        // A Movie Night session should only be exited via the dedicated
+        // controls — accidental swipes here would drop the user back into
+        // the lobby mid-session. Hiding the back button plus the binding
+        // setter in MovieNightEntryView (which refuses to reset the phase)
+        // makes both the system back button and edge-swipe inert.
+        .navigationBarBackButtonHidden(true)
+        .disableInteractivePopGesture()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if !viewModel.deckMovies.isEmpty {
@@ -60,6 +71,7 @@ struct MovieNightSwipeView: View {
                 providers: viewModel.movieProviders,
                 seenMovies: viewModel.seenMovieIds,
                 watchlistMovies: SeenMoviesService.shared.watchlist,
+                programmaticSwipe: $pendingProgrammaticSwipe,
                 onSwipe: { direction in
                     Task { await viewModel.swipe(direction: direction) }
                 },
@@ -130,37 +142,44 @@ struct MovieNightSwipeView: View {
             .opacity(viewModel.currentCardIndex > 0 ? 1 : 0.3)
             .disabled(viewModel.currentCardIndex == 0)
 
-            // Skip (left swipe)
+            // Skip (left swipe) — fires the stamp then advances
             actionButton(
                 icon: "xmark",
                 color: FFColors.ruby,
                 size: 56
             ) {
-                Task { await viewModel.swipeLeft() }
+                triggerProgrammaticSwipe(.left)
             }
 
-            // Toggle seen
+            // Watchlist toggle for the current card
             actionButton(
-                icon: currentMovieIsSeen ? "eye.fill" : "eye",
-                color: currentMovieIsSeen ? FFColors.goldPrimary : FFColors.textTertiary,
+                icon: currentMovieIsOnWatchlist ? "bookmark.fill" : "bookmark",
+                color: currentMovieIsOnWatchlist ? FFColors.goldPrimary : FFColors.textTertiary,
                 size: 40
             ) {
                 if let movie = currentMovie {
-                    viewModel.toggleSeenIt(tmdbId: movie.tmdbId)
-                    SeenMoviesService.shared.toggleSeen(movie)
+                    SeenMoviesService.shared.toggleWatchlist(movie)
                 }
             }
 
-            // Want to watch (right swipe)
+            // Want to watch (right swipe) — fires the stamp then advances
             actionButton(
                 icon: "checkmark",
                 color: FFColors.success,
                 size: 56
             ) {
-                Task { await viewModel.swipeRight() }
+                triggerProgrammaticSwipe(.right)
             }
         }
         .padding(.horizontal, FFSpacing.xl)
+    }
+
+    /// Kick off the fly-off animation on the top card then let the view model
+    /// advance once the animation is mostly complete. Matches what a real
+    /// drag-swipe produces, including the SKIP/WATCH stamp.
+    private func triggerProgrammaticSwipe(_ direction: SwipeDirection) {
+        guard currentMovie != nil else { return }
+        pendingProgrammaticSwipe = direction
     }
 
     private func actionButton(icon: String, color: Color, size: CGFloat, action: @escaping () -> Void) -> some View {
@@ -430,9 +449,9 @@ struct MovieNightSwipeView: View {
         return viewModel.deckMovies[viewModel.currentCardIndex]
     }
 
-    private var currentMovieIsSeen: Bool {
+    private var currentMovieIsOnWatchlist: Bool {
         guard let movie = currentMovie else { return false }
-        return viewModel.seenMovieIds.contains(movie.tmdbId)
+        return SeenMoviesService.shared.isOnWatchlist(tmdbId: movie.tmdbId)
     }
 }
 

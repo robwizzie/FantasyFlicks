@@ -136,6 +136,10 @@ final class SeenMoviesService: ObservableObject {
     @Published var diary: [DiaryEntry] = []
     @Published var watchlist: Set<Int> = []           // tmdbId set for want-to-watch
     @Published var movieCache: [Int: CachedMovie] = [:]  // tmdbId -> cached metadata
+    /// Optional user-picked poster override for a movie. When set, FavoritesRow
+    /// (and anywhere else opting in) renders this poster instead of the TMDB
+    /// default. Lets users swap to an alternate artwork for a pinned favorite.
+    @Published var favoritePosterOverrides: [Int: String] = [:] // tmdbId -> TMDB poster path
     @Published var isImporting = false
     @Published var lastImportCount: Int?
 
@@ -146,6 +150,7 @@ final class SeenMoviesService: ObservableObject {
     private let diaryKey = "ff_movie_diary"
     private let watchlistKey = "ff_movie_watchlist"
     private let movieCacheKey = "ff_movie_cache"
+    private let favoritePosterOverridesKey = "ff_favorite_poster_overrides"
 
     // MARK: - Firestore Sync
 
@@ -193,8 +198,15 @@ final class SeenMoviesService: ObservableObject {
     /// Pass a `limit` to cap how many movies to hydrate per call — useful for
     /// large lists where you only want to fetch what's on screen.
     /// Safe to call from any view's `.task { }`.
+    ///
+    /// Considers a cached entry "missing" if it has no posterPath — older app
+    /// builds imported Letterboxd rows without poster info, so we need to
+    /// re-fetch those even though they're already in the cache.
     func hydrateMissingMetadata(tmdbIds: some Sequence<Int>, limit: Int? = nil) async {
-        let missingAll = tmdbIds.filter { movieCache[$0] == nil }
+        let missingAll = tmdbIds.filter { id in
+            guard let cached = movieCache[id] else { return true }
+            return cached.posterPath == nil
+        }
         guard !missingAll.isEmpty else { return }
 
         // Apply the per-call limit so we don't hammer TMDB on large lists.
@@ -417,6 +429,32 @@ final class SeenMoviesService: ObservableObject {
         save()
     }
 
+    // MARK: - Favorite Poster Overrides
+
+    /// Return the active poster path for a favorited movie — user-picked
+    /// alternate if one was set, otherwise the default cached poster.
+    func favoritePosterPath(for tmdbId: Int) -> String? {
+        if let override = favoritePosterOverrides[tmdbId] { return override }
+        return cachedMovie(for: tmdbId)?.posterPath
+    }
+
+    /// Build the image URL for a favorited movie using either the user's picked
+    /// alternate poster or the default cached poster.
+    func favoritePosterURL(for tmdbId: Int) -> URL? {
+        guard let path = favoritePosterPath(for: tmdbId) else { return nil }
+        return URL(string: "\(APIConfiguration.TMDB.imageBaseURL)/\(APIConfiguration.TMDB.PosterSize.medium.rawValue)\(path)")
+    }
+
+    /// Pick a custom poster for a favorite. Pass nil to revert to the default.
+    func setFavoritePosterOverride(tmdbId: Int, posterPath: String?) {
+        if let posterPath {
+            favoritePosterOverrides[tmdbId] = posterPath
+        } else {
+            favoritePosterOverrides.removeValue(forKey: tmdbId)
+        }
+        save()
+    }
+
     // MARK: - Persistence
 
     private func save() {
@@ -433,6 +471,9 @@ final class SeenMoviesService: ObservableObject {
         if let cacheData = try? JSONEncoder().encode(Array(movieCache.values)) {
             UserDefaults.standard.set(cacheData, forKey: movieCacheKey)
         }
+
+        let overridesDict = favoritePosterOverrides.reduce(into: [String: String]()) { $0["\($1.key)"] = $1.value }
+        UserDefaults.standard.set(overridesDict, forKey: favoritePosterOverridesKey)
 
         scheduleFirestoreSync()
 
@@ -475,12 +516,14 @@ final class SeenMoviesService: ObservableObject {
         let cacheJSON = (try? encoder.encode(Array(movieCache.values))).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
         let ratingsDict = ratings.reduce(into: [String: Double]()) { $0["\($1.key)"] = $1.value }
 
+        let overridesDict = favoritePosterOverrides.reduce(into: [String: String]()) { $0["\($1.key)"] = $1.value }
         let payload: [String: Any] = [
             "mediaSeenIds": Array(seenTmdbIds),
             "mediaWatchlistIds": Array(watchlist),
             "mediaRatings": ratingsDict,
             "mediaDiaryJSON": diaryJSON,
             "mediaCacheJSON": cacheJSON,
+            "favoritePosterOverrides": overridesDict,
             "mediaUpdatedAt": Timestamp(date: Date())
         ]
 
@@ -531,6 +574,14 @@ final class SeenMoviesService: ObservableObject {
                 )
             }
         }
+
+        if let raw = UserDefaults.standard.dictionary(forKey: favoritePosterOverridesKey) as? [String: String] {
+            favoritePosterOverrides = raw.reduce(into: [Int: String]()) { result, pair in
+                if let key = Int(pair.key) {
+                    result[key] = pair.value
+                }
+            }
+        }
     }
 
     // MARK: - Letterboxd Import
@@ -570,40 +621,45 @@ final class SeenMoviesService: ObservableObject {
                     (index: batchStart + $0.offset, entry: $0.element)
                 }
 
-                await withTaskGroup(of: (Int, LetterboxdEntry, Int?).self) { group in
+                await withTaskGroup(of: (Int, LetterboxdEntry, TMDBMovie?).self) { group in
                     for item in batch {
                         group.addTask {
                             do {
                                 let response = try await TMDBService.shared.searchMovies(query: item.entry.name, page: 1)
-                                let match = response.results.first { movie in
-                                    let titleMatch = movie.title.lowercased() == item.entry.name.lowercased()
-                                    if let year = item.entry.year, let releaseDate = movie.releaseDate {
-                                        let movieYear = Calendar.current.component(.year, from: releaseDate)
-                                        return titleMatch && movieYear == year
-                                    }
-                                    return titleMatch
-                                } ?? response.results.first
-                                return (item.index, item.entry, match?.id)
+                                let match = Self.bestLetterboxdMatch(for: item.entry, in: response.results)
+                                return (item.index, item.entry, match)
                             } catch {
                                 return (item.index, item.entry, nil)
                             }
                         }
                     }
 
-                    for await (index, entry, tmdbId) in group {
-                        guard let tmdbId else { continue }
+                    for await (index, entry, tmdbMovie) in group {
+                        guard let tmdbMovie else { continue }
                         matchedCount += 1
-                        if kind == .favorites {
-                            favoriteMatches.append((index: index, tmdbId: tmdbId))
-                            // Still cache metadata so the FavoritesRow can render immediately.
-                            if movieCache[tmdbId] == nil {
-                                movieCache[tmdbId] = CachedMovie(
-                                    id: tmdbId, title: entry.name, posterPath: nil,
-                                    backdropPath: nil, year: entry.year, voteAverage: nil
-                                )
+                        // Derive year from release date so we don't overwrite a good
+                        // value with nil if the CSV omitted it.
+                        let movieYear: Int? = {
+                            if let d = tmdbMovie.releaseDate {
+                                return Calendar.current.component(.year, from: d)
                             }
+                            return entry.year
+                        }()
+                        // Always refresh the cached metadata — imports overwrite stub
+                        // entries that were saved without posters by older builds.
+                        movieCache[tmdbMovie.id] = CachedMovie(
+                            id: tmdbMovie.id,
+                            title: tmdbMovie.title,
+                            posterPath: tmdbMovie.posterPath,
+                            backdropPath: tmdbMovie.backdropPath,
+                            year: movieYear,
+                            voteAverage: tmdbMovie.voteAverage
+                        )
+
+                        if kind == .favorites {
+                            favoriteMatches.append((index: index, tmdbId: tmdbMovie.id))
                         } else {
-                            apply(entry: entry, tmdbId: tmdbId, kind: kind)
+                            apply(entry: entry, tmdbMovie: tmdbMovie, kind: kind)
                         }
                     }
                 }
@@ -625,21 +681,87 @@ final class SeenMoviesService: ObservableObject {
             if matchedCount > 0 {
                 AchievementService.shared.forceUnlock("letterboxd_convert")
             }
+
+            // Kick off a background hydration pass for anything that's still
+            // missing a poster (diary rows imported by older builds, cached
+            // entries where TMDB search didn't return a poster path, etc.).
+            Task { [weak self] in
+                guard let self else { return }
+                let missingIds = self.movieCache.values
+                    .filter { $0.posterPath == nil }
+                    .map { $0.id }
+                if !missingIds.isEmpty {
+                    await self.hydrateMissingMetadata(tmdbIds: missingIds, limit: 100)
+                }
+            }
+
             return matchedCount
         } catch {
             return 0
         }
     }
 
-    /// Apply a single matched CSV entry to the appropriate local store.
-    private func apply(entry: LetterboxdEntry, tmdbId: Int, kind: LetterboxdCSVKind) {
-        // Always cache what we can so lists can render something immediately.
-        if movieCache[tmdbId] == nil {
-            movieCache[tmdbId] = CachedMovie(
-                id: tmdbId, title: entry.name, posterPath: nil,
-                backdropPath: nil, year: entry.year, voteAverage: nil
-            )
+    /// Pick the best TMDB search result for a Letterboxd CSV row.
+    /// Prefers exact title + year, then exact title, then year-plus-popularity.
+    /// Returns nil if nothing in the result set is a reasonable match — better
+    /// to skip than to import "Sinners" and get a random horror short.
+    private static func bestLetterboxdMatch(for entry: LetterboxdEntry, in results: [TMDBMovie]) -> TMDBMovie? {
+        guard !results.isEmpty else { return nil }
+        let target = entry.name.lowercased()
+        let targetYear = entry.year
+
+        // 1. Exact title + year.
+        if let y = targetYear {
+            if let exact = results.first(where: { movie in
+                let title = movie.title.lowercased()
+                let original = movie.originalTitle?.lowercased() ?? ""
+                guard title == target || original == target else { return false }
+                guard let date = movie.releaseDate else { return false }
+                return Calendar.current.component(.year, from: date) == y
+            }) {
+                return exact
+            }
+            // 1b. Exact title + year within 1 (Letterboxd sometimes lists the
+            // theatrical year while TMDB stores the festival year and vice versa).
+            if let close = results.first(where: { movie in
+                let title = movie.title.lowercased()
+                let original = movie.originalTitle?.lowercased() ?? ""
+                guard title == target || original == target else { return false }
+                guard let date = movie.releaseDate else { return false }
+                return abs(Calendar.current.component(.year, from: date) - y) <= 1
+            }) {
+                return close
+            }
         }
+
+        // 2. Exact title only (no year available).
+        if targetYear == nil {
+            if let exact = results.first(where: { $0.title.lowercased() == target || ($0.originalTitle?.lowercased() ?? "") == target }) {
+                return exact
+            }
+        }
+
+        // 3. Fallback: most popular result sharing the entry's year.
+        if let y = targetYear {
+            let yearMatches = results.filter { movie in
+                guard let date = movie.releaseDate else { return false }
+                return Calendar.current.component(.year, from: date) == y
+            }
+            if let best = yearMatches.max(by: { ($0.popularity ?? 0) < ($1.popularity ?? 0) }) {
+                return best
+            }
+        }
+
+        // Nothing confident — refuse to import. Prevents "Sinners" type mis-matches
+        // from polluting the user's seen set and Movie Night deck.
+        return nil
+    }
+
+    /// Apply a single matched CSV entry to the appropriate local store. The
+    /// `tmdbMovie` is the TMDB search result we already matched, so we can
+    /// save its poster/backdrop paths immediately — no second API round-trip.
+    private func apply(entry: LetterboxdEntry, tmdbMovie: TMDBMovie, kind: LetterboxdCSVKind) {
+        let tmdbId = tmdbMovie.id
 
         switch kind {
         case .watchlist:
@@ -692,8 +814,8 @@ final class SeenMoviesService: ObservableObject {
                         rating: starRating.map { Int($0.rounded()) }, // keep legacy field in sync
                         ratingStars: starRating,
                         reviewText: entry.reviewText,
-                        title: entry.name,
-                        posterPath: nil,
+                        title: tmdbMovie.title,
+                        posterPath: tmdbMovie.posterPath,
                         isRewatch: entry.isRewatch
                     )
                     diary.append(newEntry)

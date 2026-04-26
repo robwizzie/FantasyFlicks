@@ -9,9 +9,20 @@ import SwiftUI
 
 struct MoviesView: View {
     @StateObject private var viewModel = MoviesViewModel()
+    @StateObject private var listsService = MovieListsService.shared
     @State private var searchText = ""
     @State private var showFilters = false
     @State private var selectedMovie: FFMovie?
+    @State private var selectedMode: BrowseMode = .collections
+    @State private var showDiscover = false
+    @State private var showCreateList = false
+    @State private var openListId: String?
+
+    enum BrowseMode: String, CaseIterable, Identifiable {
+        case collections = "Collections"
+        case years = "By Year"
+        var id: String { rawValue }
+    }
 
     private let years = Array((1970...2027).reversed())
     private let genres = [
@@ -33,27 +44,22 @@ struct MoviesView: View {
 
                 ScrollView {
                     VStack(spacing: FFSpacing.xl) {
-                        // Year selector
-                        yearSelector
+                        // Always-visible Discover call-to-action — primary
+                        // onboarding path for new users ("swipe to tell us
+                        // what you've seen").
+                        discoverHero
 
-                        // Genre filter
-                        genreFilter
-
-                        // Search results or main content
                         if !searchText.isEmpty {
                             searchResultsSection
                         } else {
-                            // Featured movie
-                            if let featured = viewModel.featuredMovie {
-                                FeaturedMovieCard(movie: featured) {
-                                    selectedMovie = featured
-                                }
-                                .id(featured.id) // Force view recreation when movie changes
-                                .padding(.horizontal)
-                            }
+                            modeSwitcher
 
-                            // Movie grid
-                            movieGrid
+                            switch selectedMode {
+                            case .collections:
+                                collectionsSection
+                            case .years:
+                                yearsSection
+                            }
                         }
 
                         Spacer(minLength: 100)
@@ -65,7 +71,7 @@ struct MoviesView: View {
                 }
 
                 // Loading overlay
-                if viewModel.isLoading && viewModel.movies.isEmpty {
+                if viewModel.isLoading && viewModel.movies.isEmpty && selectedMode == .years {
                     loadingOverlay
                 }
             }
@@ -84,13 +90,139 @@ struct MoviesView: View {
                 }
             }
             .task {
-                await viewModel.fetchMovies()
+                if viewModel.movies.isEmpty {
+                    await viewModel.fetchMovies()
+                }
             }
             .sheet(item: $selectedMovie) { movie in
                 NavigationStack {
                     MovieDetailView(movie: movie)
                 }
             }
+            .navigationDestination(isPresented: $showDiscover) {
+                DiscoverSwipeView()
+            }
+            .navigationDestination(isPresented: Binding(
+                get: { openListId != nil },
+                set: { if !$0 { openListId = nil } }
+            )) {
+                if let id = openListId {
+                    MovieListDetailView(listId: id)
+                }
+            }
+            .sheet(isPresented: $showCreateList) {
+                CreateMovieListSheet { newList in
+                    openListId = newList.id
+                }
+            }
+        }
+    }
+
+    // MARK: - Mode switcher
+
+    private var modeSwitcher: some View {
+        Picker("Mode", selection: $selectedMode) {
+            ForEach(BrowseMode.allCases) { mode in
+                Text(mode.rawValue).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal)
+    }
+
+    // MARK: - Discover hero
+
+    private var discoverHero: some View {
+        Button { showDiscover = true } label: {
+            HStack(spacing: FFSpacing.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                        .fill(FFColors.goldPrimary.opacity(0.15))
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "sparkles.rectangle.stack.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(FFColors.goldPrimary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Discover")
+                        .font(FFTypography.titleSmall)
+                        .foregroundColor(FFColors.textPrimary)
+                    Text("Endless swipes to build your account")
+                        .font(FFTypography.caption)
+                        .foregroundColor(FFColors.textTertiary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(FFColors.goldPrimary)
+            }
+            .padding(FFSpacing.md)
+            .background {
+                RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                    .fill(FFColors.backgroundElevated.opacity(0.6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                            .stroke(FFColors.goldPrimary.opacity(0.3), lineWidth: 1)
+                    }
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal)
+    }
+
+    // MARK: - Collections
+
+    private var collectionsSection: some View {
+        VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack {
+                Text("Collections")
+                    .font(FFTypography.headlineSmall)
+                    .foregroundColor(FFColors.textPrimary)
+                Spacer()
+                Button {
+                    showCreateList = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle.fill").font(.system(size: 12))
+                        Text("New")
+                    }
+                    .font(FFTypography.labelSmall)
+                    .foregroundColor(FFColors.goldPrimary)
+                }
+            }
+            .padding(.horizontal)
+
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: FFSpacing.md),
+                GridItem(.flexible(), spacing: FFSpacing.md)
+            ], spacing: FFSpacing.md) {
+                ForEach(listsService.allVisibleLists) { list in
+                    Button {
+                        openListId = list.id
+                    } label: {
+                        CollectionTile(list: list)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    // MARK: - Years
+
+    private var yearsSection: some View {
+        VStack(spacing: FFSpacing.xl) {
+            yearSelector
+            genreFilter
+            if let featured = viewModel.featuredMovie {
+                FeaturedMovieCard(movie: featured) {
+                    selectedMovie = featured
+                }
+                .id(featured.id)
+                .padding(.horizontal)
+            }
+            movieGrid
         }
     }
 
@@ -267,6 +399,67 @@ struct MoviesView: View {
                     .padding(.vertical, FFSpacing.lg)
                 }
             }
+        }
+    }
+}
+
+// MARK: - Collection Tile
+
+/// Spotify-playlist style tile for a movie collection.
+struct CollectionTile: View {
+    let list: MovieList
+    @StateObject private var seenService = SeenMoviesService.shared
+
+    private var coverURL: URL? {
+        if let path = list.coverPosterPath {
+            return URL(string: "\(APIConfiguration.TMDB.imageBaseURL)/\(APIConfiguration.TMDB.PosterSize.medium.rawValue)\(path)")
+        }
+        if let firstId = list.movieIds.first {
+            return seenService.cachedMovie(for: firstId)?.posterURL
+        }
+        return nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack {
+                if let url = coverURL {
+                    CachedAsyncImage(url: url) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                            .fill(FFColors.backgroundElevated)
+                    }
+                } else {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                        .fill(LinearGradient(
+                            colors: [FFColors.goldPrimary.opacity(0.35), FFColors.backgroundElevated],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                        .overlay {
+                            Image(systemName: list.isCurated ? "sparkles" : "rectangle.stack.fill")
+                                .font(.system(size: 28))
+                                .foregroundColor(FFColors.goldLight)
+                        }
+                }
+            }
+            .aspectRatio(1.0, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.medium))
+            .overlay {
+                RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+            }
+
+            Text(list.name)
+                .font(FFTypography.labelMedium)
+                .foregroundColor(FFColors.textPrimary)
+                .lineLimit(1)
+
+            Text("\(list.movieIds.count) \(list.movieIds.count == 1 ? "movie" : "movies")")
+                .font(FFTypography.caption)
+                .foregroundColor(FFColors.textTertiary)
+                .lineLimit(1)
         }
     }
 }

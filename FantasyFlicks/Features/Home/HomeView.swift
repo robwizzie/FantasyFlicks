@@ -18,6 +18,10 @@ struct HomeView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var selectedMovie: FFMovie?
     @State private var showDraftRoom = false
+    @State private var showDiary = false
+    @State private var showWatched = false
+    @State private var showWatchlist = false
+    @State private var showRatings = false
 
     // User leagues from Firebase
     private var activeLeagues: [FFLeague] { viewModel.userLeagues }
@@ -41,6 +45,11 @@ struct HomeView: View {
 
                         // Movie Night hero CTA
                         movieNightHeroSection
+
+                        // Quick access to the user's own movie lists so they
+                        // don't have to jump to the Profile tab for every
+                        // Diary/Watched/Watchlist/Ratings open.
+                        myMoviesHubSection
 
                         // Other modes (Coming Soon)
                         quickActionsSection
@@ -85,6 +94,10 @@ struct HomeView: View {
                     MovieDetailView(movie: movie)
                 }
             }
+            .sheet(isPresented: $showDiary) { DiaryView() }
+            .sheet(isPresented: $showWatched) { WatchedMoviesSheet() }
+            .sheet(isPresented: $showWatchlist) { WatchlistView() }
+            .sheet(isPresented: $showRatings) { RatingsView() }
             .navigationDestination(isPresented: $showDraftRoom) {
                 if let activeDraft = viewModel.activeDraft {
                     if activeDraft.isOscarMode {
@@ -321,6 +334,98 @@ struct HomeView: View {
                 .padding(.horizontal)
             }
         }
+    }
+
+    // MARK: - My Movies Hub (Dashboard)
+
+    private var myMoviesHubSection: some View {
+        VStack(alignment: .leading, spacing: FFSpacing.md) {
+            HStack {
+                Text("My Movies")
+                    .font(FFTypography.headlineSmall)
+                    .foregroundColor(FFColors.textPrimary)
+                Spacer()
+                Button {
+                    navigationCoordinator.navigateTo(.profile)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Profile")
+                            .font(FFTypography.labelSmall)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor(FFColors.goldPrimary)
+                }
+            }
+            .padding(.horizontal)
+
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: FFSpacing.md),
+                GridItem(.flexible(), spacing: FFSpacing.md),
+                GridItem(.flexible(), spacing: FFSpacing.md),
+                GridItem(.flexible(), spacing: FFSpacing.md)
+            ], spacing: FFSpacing.md) {
+                myMoviesTile(
+                    icon: "book.closed.fill",
+                    label: "Diary",
+                    count: seenService.diary.count,
+                    color: FFColors.goldPrimary
+                ) { showDiary = true }
+
+                myMoviesTile(
+                    icon: "eye.fill",
+                    label: "Watched",
+                    count: seenService.count,
+                    color: FFColors.success
+                ) { showWatched = true }
+
+                myMoviesTile(
+                    icon: "bookmark.fill",
+                    label: "Watchlist",
+                    count: seenService.watchlist.count,
+                    color: FFColors.ruby
+                ) { showWatchlist = true }
+
+                myMoviesTile(
+                    icon: "star.fill",
+                    label: "Ratings",
+                    count: seenService.ratings.count,
+                    color: FFColors.goldLight
+                ) { showRatings = true }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    private func myMoviesTile(icon: String, label: String, count: Int, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(color)
+                Text("\(count)")
+                    .font(FFTypography.titleSmall)
+                    .foregroundColor(FFColors.textPrimary)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+                Text(label)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(FFColors.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, FFSpacing.md)
+            .background {
+                RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                    .fill(FFColors.backgroundElevated.opacity(0.6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: FFCornerRadius.large)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                    }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Movie Night Hero

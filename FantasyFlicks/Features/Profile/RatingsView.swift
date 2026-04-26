@@ -12,11 +12,20 @@ struct RatingsView: View {
     @StateObject private var seenService = SeenMoviesService.shared
     @State private var sortOption: SortOption = .ratingDesc
     @State private var selectedMovie: FFMovie?
+    @State private var listFilter = ""
 
     /// Snapshot of ordered tmdb IDs. Computed once per (ratings, sort option) change
     /// so the list doesn't reshuffle every time metadata hydrates in — that was
     /// what caused the "auto-scroll" jumping behavior.
     @State private var orderedTmdbIds: [Int] = []
+
+    private var filteredOrderedIds: [Int] {
+        let q = listFilter.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return orderedTmdbIds }
+        return orderedTmdbIds.filter { id in
+            seenService.cachedMovie(for: id)?.title.lowercased().contains(q) ?? false
+        }
+    }
 
     enum SortOption: String, CaseIterable {
         case ratingDesc = "Highest rated"
@@ -74,7 +83,8 @@ struct RatingsView: View {
                         LazyVStack(spacing: FFSpacing.sm, pinnedViews: []) {
                             sortBar
                                 .padding(.top, FFSpacing.md)
-                            ForEach(Array(orderedTmdbIds.enumerated()), id: \.element) { index, tmdbId in
+                            filterBar
+                            ForEach(Array(filteredOrderedIds.enumerated()), id: \.element) { index, tmdbId in
                                 row(
                                     tmdbId: tmdbId,
                                     stars: seenService.ratings[tmdbId] ?? 0,
@@ -84,10 +94,10 @@ struct RatingsView: View {
                                 .onAppear {
                                     // When the user scrolls within 10 rows of the end,
                                     // hydrate the next 30 movies' metadata.
-                                    if index >= orderedTmdbIds.count - 10 {
+                                    if index >= filteredOrderedIds.count - 10 {
                                         Task {
                                             await seenService.hydrateMissingMetadata(
-                                                tmdbIds: orderedTmdbIds.suffix(from: index),
+                                                tmdbIds: orderedTmdbIds.suffix(from: min(index, orderedTmdbIds.count)),
                                                 limit: 30
                                             )
                                         }
@@ -145,6 +155,32 @@ struct RatingsView: View {
                 .multilineTextAlignment(.center)
         }
         .padding()
+    }
+
+    // MARK: - Filter
+
+    private var filterBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundColor(FFColors.textTertiary)
+            TextField("Filter titles", text: $listFilter)
+                .font(FFTypography.labelSmall)
+                .foregroundColor(FFColors.textPrimary)
+                .autocorrectionDisabled()
+            if !listFilter.isEmpty {
+                Button { listFilter = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(FFColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(FFColors.backgroundElevated.opacity(0.6))
+        .clipShape(Capsule())
+        .padding(.horizontal)
     }
 
     // MARK: - Sort

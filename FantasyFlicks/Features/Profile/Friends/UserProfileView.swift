@@ -41,14 +41,16 @@ struct UserProfileView: View {
                 VStack(spacing: FFSpacing.xl) {
                     header
 
-                    if !user.favoriteMovieIds.isEmpty {
-                        FavoritesRow(
-                            tmdbIds: user.favoriteMovieIds,
-                            isEditable: false,
-                            onTapMovie: { favoriteDetail = $0 },
-                            onEdit: {}
-                        )
-                    }
+                    // Always render the Top 4 section — even with no favorites
+                    // it shows four placeholder slots so the layout stays
+                    // consistent and the user knows this is where favorites live.
+                    FavoritesRow(
+                        tmdbIds: user.favoriteMovieIds,
+                        isEditable: false,
+                        posterOverrides: snapshot.favoritePosterOverrides,
+                        onTapMovie: { favoriteDetail = $0 },
+                        onEdit: {}
+                    )
 
                     if let bio = user.bio, !bio.isEmpty {
                         bioSection(bio)
