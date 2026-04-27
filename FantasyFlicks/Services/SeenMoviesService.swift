@@ -705,7 +705,7 @@ final class SeenMoviesService: ObservableObject {
     /// Prefers exact title + year, then exact title, then year-plus-popularity.
     /// Returns nil if nothing in the result set is a reasonable match — better
     /// to skip than to import "Sinners" and get a random horror short.
-    private static func bestLetterboxdMatch(for entry: LetterboxdEntry, in results: [TMDBMovie]) -> TMDBMovie? {
+    private nonisolated static func bestLetterboxdMatch(for entry: LetterboxdEntry, in results: [TMDBMovie]) -> TMDBMovie? {
         guard !results.isEmpty else { return nil }
         let target = entry.name.lowercased()
         let targetYear = entry.year
