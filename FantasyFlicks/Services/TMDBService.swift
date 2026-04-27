@@ -109,6 +109,16 @@ final class TMDBService {
         return try await networkManager.get(url: url)
     }
 
+    /// Search for movies, narrowed to a specific primary release year.
+    /// Used by the Letterboxd importer where the CSV provides a year and
+    /// we want to disambiguate same-title films across decades.
+    func searchMovies(query: String, year: Int, page: Int = 1) async throws -> TMDBMovieListResponse {
+        guard let url = TMDBEndpoint.searchWithYear(query: query, year: year, page: page).url() else {
+            throw NetworkError.invalidURL
+        }
+        return try await networkManager.get(url: url)
+    }
+
     /// Fetch genre list
     func getGenres() async throws -> [Genre] {
         guard let url = TMDBEndpoint.genres.url() else {

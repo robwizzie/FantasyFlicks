@@ -102,6 +102,7 @@ enum TMDBEndpoint: Sendable {
     case movieVideos(id: Int)
     case movieReleaseDates(id: Int)
     case search(query: String, page: Int)
+    case searchWithYear(query: String, year: Int, page: Int)
     case genres
     case configuration
     case trending(timeWindow: String, page: Int)
@@ -120,7 +121,7 @@ enum TMDBEndpoint: Sendable {
         case .movieCredits(let id): return "/movie/\(id)/credits"
         case .movieVideos(let id): return "/movie/\(id)/videos"
         case .movieReleaseDates(let id): return "/movie/\(id)/release_dates"
-        case .search: return "/search/movie"
+        case .search, .searchWithYear: return "/search/movie"
         case .genres: return "/genre/movie/list"
         case .configuration: return "/configuration"
         case .trending(let timeWindow, _): return "/trending/movie/\(timeWindow)"
@@ -135,9 +136,10 @@ enum TMDBEndpoint: Sendable {
         // search — restricts title matching. We exclude it on the /search/movie
         // endpoint so partial queries like "dune" match across all regions.
         var items: [URLQueryItem] = []
-        if case .search = self {
-            // no default language param for search
-        } else {
+        switch self {
+        case .search, .searchWithYear:
+            break  // no default language param for search
+        default:
             items.append(URLQueryItem(name: "language", value: "en-US"))
         }
 
@@ -168,6 +170,16 @@ enum TMDBEndpoint: Sendable {
                 URLQueryItem(name: "query", value: query),
                 URLQueryItem(name: "page", value: "\(page)"),
                 URLQueryItem(name: "include_adult", value: "false")
+            ])
+        case .searchWithYear(let query, let year, let page):
+            // `primary_release_year` narrows TMDB's results to the year the
+            // Letterboxd row reports, dramatically improving match accuracy
+            // for movies whose titles overlap with sequels or unrelated films.
+            items.append(contentsOf: [
+                URLQueryItem(name: "query", value: query),
+                URLQueryItem(name: "page", value: "\(page)"),
+                URLQueryItem(name: "include_adult", value: "false"),
+                URLQueryItem(name: "primary_release_year", value: "\(year)")
             ])
         case .trending(_, let page):
             items.append(URLQueryItem(name: "page", value: "\(page)"))

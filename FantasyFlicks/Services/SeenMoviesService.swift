@@ -142,6 +142,10 @@ final class SeenMoviesService: ObservableObject {
     @Published var favoritePosterOverrides: [Int: String] = [:] // tmdbId -> TMDB poster path
     @Published var isImporting = false
     @Published var lastImportCount: Int?
+    /// Titles from the most recent Letterboxd CSV that couldn't be matched
+    /// against TMDB. Surfaced in the import UI so users know which rows
+    /// were skipped and can manually search them.
+    @Published var lastImportUnmatched: [String] = []
 
     // MARK: - Private Keys
 
@@ -609,6 +613,7 @@ final class SeenMoviesService: ObservableObject {
             let filename = url.lastPathComponent.lowercased()
             let (kind, entries) = parseLetterboxdCSV(csvString, filename: filename)
             var matchedCount = 0
+            var unmatchedTitles: [String] = []
             // For favorites.csv, accumulate IDs in CSV order so the final write
             // matches the user's Letterboxd ordering.
             var favoriteMatches: [(index: Int, tmdbId: Int)] = []
@@ -624,18 +629,20 @@ final class SeenMoviesService: ObservableObject {
                 await withTaskGroup(of: (Int, LetterboxdEntry, TMDBMovie?).self) { group in
                     for item in batch {
                         group.addTask {
-                            do {
-                                let response = try await TMDBService.shared.searchMovies(query: item.entry.name, page: 1)
-                                let match = Self.bestLetterboxdMatch(for: item.entry, in: response.results)
-                                return (item.index, item.entry, match)
-                            } catch {
-                                return (item.index, item.entry, nil)
-                            }
+                            let match = await Self.findTMDBMatch(for: item.entry)
+                            return (item.index, item.entry, match)
                         }
                     }
 
                     for await (index, entry, tmdbMovie) in group {
-                        guard let tmdbMovie else { continue }
+                        guard let tmdbMovie else {
+                            // Track skipped titles so the UI can show the user
+                            // what didn't make it through. Letterboxd rows
+                            // sometimes have ambiguous titles or year mismatches.
+                            let label = entry.year.map { "\(entry.name) (\($0))" } ?? entry.name
+                            unmatchedTitles.append(label)
+                            continue
+                        }
                         matchedCount += 1
                         // Derive year from release date so we don't overwrite a good
                         // value with nil if the CSV omitted it.
@@ -678,6 +685,7 @@ final class SeenMoviesService: ObservableObject {
             diary.sort { $0.watchedDate > $1.watchedDate }
             save()
             lastImportCount = matchedCount
+            lastImportUnmatched = unmatchedTitles
             if matchedCount > 0 {
                 AchievementService.shared.forceUnlock("letterboxd_convert")
             }
@@ -701,60 +709,184 @@ final class SeenMoviesService: ObservableObject {
         }
     }
 
+    /// Find the best TMDB match for a Letterboxd CSV row across multiple
+    /// search strategies. The CSV gives us a title and (usually) a year, but
+    /// the title in Letterboxd doesn't always byte-match TMDB's title — common
+    /// mismatches: leading articles ("The Wild Robot" vs "Wild Robot"),
+    /// punctuation, ampersand vs "and", smart quotes, year off by one, etc.
+    /// We try four strategies in order, returning the first confident match.
+    private static func findTMDBMatch(for entry: LetterboxdEntry) async -> TMDBMovie? {
+        // Strategy 1: TMDB search scoped to the year the CSV reports. This
+        // returns at most ~20 results and is much more accurate for movies
+        // whose titles overlap with sequels or remakes.
+        if let year = entry.year {
+            if let response = try? await TMDBService.shared.searchMovies(query: entry.name, year: year, page: 1),
+               let match = bestLetterboxdMatch(for: entry, in: response.results, allowFuzzy: true) {
+                return match
+            }
+        }
+
+        // Strategy 2: Broad search by name only. Some Letterboxd rows have a
+        // CSV year that doesn't quite match TMDB's primary release year.
+        if let response = try? await TMDBService.shared.searchMovies(query: entry.name, page: 1),
+           let match = bestLetterboxdMatch(for: entry, in: response.results, allowFuzzy: true) {
+            return match
+        }
+
+        // Strategy 3: Strip leading articles ("The Wild Robot" → "Wild Robot")
+        // and try year-scoped search again.
+        let stripped = stripLeadingArticles(entry.name)
+        if stripped != entry.name, let year = entry.year {
+            if let response = try? await TMDBService.shared.searchMovies(query: stripped, year: year, page: 1),
+               let match = bestLetterboxdMatch(for: entry, in: response.results, allowFuzzy: true) {
+                return match
+            }
+        }
+
+        // Strategy 4: Last-resort year-only fallback — pick the most popular
+        // result that shares the year, even if the title doesn't match. This
+        // handles cases where TMDB stores a heavily reformatted title.
+        if let year = entry.year,
+           let response = try? await TMDBService.shared.searchMovies(query: entry.name, year: year, page: 1) {
+            let yearMatches = response.results.filter { movie in
+                guard let date = movie.releaseDate else { return false }
+                return abs(Calendar.current.component(.year, from: date) - year) <= 1
+            }
+            // Only accept this loose match if popularity is meaningful — keeps
+            // shorts and obscure title-clashes from polluting the import.
+            if let best = yearMatches.max(by: { ($0.popularity ?? 0) < ($1.popularity ?? 0) }),
+               (best.popularity ?? 0) >= 1.0 {
+                return best
+            }
+        }
+
+        return nil
+    }
+
     /// Pick the best TMDB search result for a Letterboxd CSV row.
-    /// Prefers exact title + year, then exact title, then year-plus-popularity.
+    /// Prefers exact normalized title + year, then exact title within ±1 year,
+    /// then substring matches with year alignment, then most popular within year.
     /// Returns nil if nothing in the result set is a reasonable match — better
     /// to skip than to import "Sinners" and get a random horror short.
-    private static func bestLetterboxdMatch(for entry: LetterboxdEntry, in results: [TMDBMovie]) -> TMDBMovie? {
+    private static func bestLetterboxdMatch(for entry: LetterboxdEntry, in results: [TMDBMovie], allowFuzzy: Bool = false) -> TMDBMovie? {
         guard !results.isEmpty else { return nil }
-        let target = entry.name.lowercased()
+        let target = normalizedTitle(entry.name)
+        let targetStripped = normalizedTitle(stripLeadingArticles(entry.name))
         let targetYear = entry.year
 
-        // 1. Exact title + year.
+        func titlesOf(_ movie: TMDBMovie) -> [String] {
+            var out = [normalizedTitle(movie.title)]
+            if let original = movie.originalTitle {
+                out.append(normalizedTitle(original))
+            }
+            // Article-stripped variants so "The Wild Robot" matches "Wild Robot".
+            out.append(normalizedTitle(stripLeadingArticles(movie.title)))
+            if let original = movie.originalTitle {
+                out.append(normalizedTitle(stripLeadingArticles(original)))
+            }
+            return out
+        }
+
+        func yearOf(_ movie: TMDBMovie) -> Int? {
+            guard let date = movie.releaseDate else { return nil }
+            return Calendar.current.component(.year, from: date)
+        }
+
+        // 1. Exact normalized title + exact year.
         if let y = targetYear {
             if let exact = results.first(where: { movie in
-                let title = movie.title.lowercased()
-                let original = movie.originalTitle?.lowercased() ?? ""
-                guard title == target || original == target else { return false }
-                guard let date = movie.releaseDate else { return false }
-                return Calendar.current.component(.year, from: date) == y
+                let titles = titlesOf(movie)
+                guard titles.contains(target) || titles.contains(targetStripped) else { return false }
+                return yearOf(movie) == y
             }) {
                 return exact
             }
-            // 1b. Exact title + year within 1 (Letterboxd sometimes lists the
-            // theatrical year while TMDB stores the festival year and vice versa).
+            // 1b. Exact normalized title + year within 1.
             if let close = results.first(where: { movie in
-                let title = movie.title.lowercased()
-                let original = movie.originalTitle?.lowercased() ?? ""
-                guard title == target || original == target else { return false }
-                guard let date = movie.releaseDate else { return false }
-                return abs(Calendar.current.component(.year, from: date) - y) <= 1
+                let titles = titlesOf(movie)
+                guard titles.contains(target) || titles.contains(targetStripped) else { return false }
+                guard let movieYear = yearOf(movie) else { return false }
+                return abs(movieYear - y) <= 1
             }) {
                 return close
             }
         }
 
-        // 2. Exact title only (no year available).
+        // 2. Exact normalized title (no year context, e.g. favorites.csv may
+        // omit year entirely).
         if targetYear == nil {
-            if let exact = results.first(where: { $0.title.lowercased() == target || ($0.originalTitle?.lowercased() ?? "") == target }) {
+            if let exact = results.first(where: { movie in
+                let titles = titlesOf(movie)
+                return titles.contains(target) || titles.contains(targetStripped)
+            }) {
                 return exact
             }
         }
 
-        // 3. Fallback: most popular result sharing the entry's year.
+        guard allowFuzzy else { return nil }
+
+        // 3. Substring containment (one side contains the other) within year ±1.
+        // Catches cases like Letterboxd "Inside Out" matching TMDB "Inside Out 2".
+        // We require the longer of the two to start with the shorter to avoid
+        // matching "John Wick" against "John Wick: Chapter 2" cross-year.
         if let y = targetYear {
-            let yearMatches = results.filter { movie in
-                guard let date = movie.releaseDate else { return false }
-                return Calendar.current.component(.year, from: date) == y
-            }
-            if let best = yearMatches.max(by: { ($0.popularity ?? 0) < ($1.popularity ?? 0) }) {
-                return best
+            if let containment = results.first(where: { movie in
+                let titles = titlesOf(movie)
+                guard let movieYear = yearOf(movie), abs(movieYear - y) <= 1 else { return false }
+                return titles.contains(where: { titleMatchesByPrefix(target, $0) || titleMatchesByPrefix(targetStripped, $0) })
+            }) {
+                return containment
             }
         }
 
-        // Nothing confident — refuse to import. Prevents "Sinners" type mis-matches
-        // from polluting the user's seen set and Movie Night deck.
         return nil
+    }
+
+    /// Normalize a title for comparison: lowercase, replace common variants,
+    /// strip punctuation that's likely noise. Keeps internal letters/numbers.
+    private static func normalizedTitle(_ s: String) -> String {
+        let lowered = s.lowercased()
+        var out = ""
+        out.reserveCapacity(lowered.count)
+        for char in lowered {
+            switch char {
+            case "&":
+                out.append("and")
+            case "’", "‘", "'", "`":
+                continue  // strip apostrophes
+            case "“", "”", "\"":
+                continue
+            case "–", "—", "-":
+                out.append("-")
+            case "?", "!", ":", ";", ",", ".", "(", ")", "[", "]":
+                continue
+            case " ", "\t":
+                if !out.hasSuffix(" ") { out.append(" ") }
+            default:
+                out.append(char)
+            }
+        }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Strip a single leading article ("The ", "A ", "An ") if present.
+    private static func stripLeadingArticles(_ s: String) -> String {
+        let trimmed = s.trimmingCharacters(in: .whitespaces)
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("the ") { return String(trimmed.dropFirst(4)) }
+        if lower.hasPrefix("a ") { return String(trimmed.dropFirst(2)) }
+        if lower.hasPrefix("an ") { return String(trimmed.dropFirst(3)) }
+        return trimmed
+    }
+
+    /// True when `target` is a prefix of `candidate` at a word boundary,
+    /// or vice versa. Used as a last-resort fuzzy match.
+    private static func titleMatchesByPrefix(_ target: String, _ candidate: String) -> Bool {
+        guard !target.isEmpty, !candidate.isEmpty else { return false }
+        if target == candidate { return true }
+        if candidate.hasPrefix(target + " ") || candidate.hasPrefix(target + ":") { return true }
+        if target.hasPrefix(candidate + " ") || target.hasPrefix(candidate + ":") { return true }
+        return false
     }
 
     /// Apply a single matched CSV entry to the appropriate local store. The

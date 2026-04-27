@@ -278,6 +278,41 @@ struct ProfileView: View {
         .padding(.horizontal)
     }
 
+    /// Show the user which Letterboxd rows we couldn't match. Helps them
+    /// spot oddities (typos in CSV, ambiguous titles) and add missing
+    /// movies manually via the Watched/Watchlist search.
+    private var unmatchedSection: some View {
+        let titles = seenMoviesService.lastImportUnmatched
+        return VStack(alignment: .leading, spacing: FFSpacing.xs) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(FFColors.goldPrimary)
+                Text("\(titles.count) couldn't be matched")
+                    .font(FFTypography.labelSmall)
+                    .foregroundColor(FFColors.textSecondary)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(titles, id: \.self) { title in
+                        Text("· \(title)")
+                            .font(FFTypography.caption)
+                            .foregroundColor(FFColors.textTertiary)
+                    }
+                }
+            }
+            .frame(maxHeight: 120)
+        }
+        .padding(FFSpacing.sm)
+        .background {
+            RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                .fill(FFColors.goldPrimary.opacity(0.06))
+                .overlay {
+                    RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                        .stroke(FFColors.goldPrimary.opacity(0.2), lineWidth: 0.5)
+                }
+        }
+    }
+
     // MARK: - Letterboxd Import Section
 
     private var letterboxdImportSection: some View {
@@ -327,6 +362,10 @@ struct ProfileView: View {
                                 .font(FFTypography.labelMedium)
                                 .foregroundColor(FFColors.success)
                         }
+                    }
+
+                    if !seenMoviesService.lastImportUnmatched.isEmpty {
+                        unmatchedSection
                     }
                 }
             }
