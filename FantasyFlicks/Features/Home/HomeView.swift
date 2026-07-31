@@ -44,6 +44,19 @@ struct HomeView: View {
                         // Hero section with logo
                         heroSection
 
+                        // First thing a new account sees. Importing a watch
+                        // history is what makes everything else work — Movie
+                        // Night stops suggesting films they've seen, and
+                        // recommendations switch on — so it leads until they
+                        // have some data of their own.
+                        if seenService.count == 0 {
+                            LetterboxdConnectCard(
+                                headline: "Start with your watch history",
+                                message: "Connect Letterboxd to bring across everything you've watched and rated. Movie Night will stop suggesting films you've already seen, and your recommendations will actually know your taste."
+                            )
+                            .padding(.horizontal)
+                        }
+
                         // Movie Night hero CTA
                         movieNightHeroSection
 

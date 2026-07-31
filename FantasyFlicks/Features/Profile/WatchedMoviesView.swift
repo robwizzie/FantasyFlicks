@@ -284,8 +284,13 @@ struct WatchedMoviesSheet: View {
                 emptyState(
                     icon: "eye.slash",
                     title: "Nothing watched yet",
-                    subtitle: "Search above, import from Letterboxd, or mark movies while swiping"
+                    subtitle: "Search above, or mark movies while swiping"
                 )
+                LetterboxdConnectCard(
+                    headline: "Bring your history across",
+                    message: "Connect Letterboxd and everything you've logged lands here in one step."
+                )
+                .padding(.horizontal)
             } else if filteredOrderedIds.isEmpty {
                 emptyState(
                     icon: "line.horizontal.3.decrease.circle",

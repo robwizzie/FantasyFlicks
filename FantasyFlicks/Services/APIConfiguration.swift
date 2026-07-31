@@ -106,8 +106,10 @@ enum TMDBEndpoint: Sendable {
     case configuration
     case trending(timeWindow: String, page: Int)
     case watchProviders(movieId: Int)
-    case discoverForMovieNight(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?, englishOnly: Bool)
-    case discoverClassics(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?, englishOnly: Bool)
+    /// Every Movie Night deck query. Takes the whole filter struct rather than
+    /// a parameter list so there is exactly one place where a filter turns into
+    /// a query item — a new filter can't be silently dropped by one call site.
+    case discoverMovieNight(filters: MovieNightFilters, source: MovieNightDeckSource, page: Int)
     case movieRecommendations(id: Int, page: Int)
     case movieSimilar(id: Int, page: Int)
     case movieImages(id: Int)
@@ -125,7 +127,7 @@ enum TMDBEndpoint: Sendable {
 
     var path: String {
         switch self {
-        case .discover, .discoverUpcomingBlockbusters, .discoverForMovieNight, .discoverClassics, .discoverByTaste: return "/discover/movie"
+        case .discover, .discoverUpcomingBlockbusters, .discoverMovieNight, .discoverByTaste: return "/discover/movie"
         case .upcoming: return "/movie/upcoming"
         case .nowPlaying: return "/movie/now_playing"
         case .movieDetails(let id): return "/movie/\(id)"
@@ -184,55 +186,78 @@ enum TMDBEndpoint: Sendable {
             ])
         case .trending(_, let page):
             items.append(URLQueryItem(name: "page", value: "\(page)"))
-        case .discoverForMovieNight(let providerIds, let region, let genreIds, let minVote, let page, let minimumYear, let minimumRuntime, let englishOnly):
+        case .discoverMovieNight(let filters, let source, let page):
             items.append(contentsOf: [
                 URLQueryItem(name: "page", value: "\(page)"),
-                URLQueryItem(name: "sort_by", value: "popularity.desc"),
-                URLQueryItem(name: "vote_average.gte", value: String(format: "%.1f", minVote)),
-                URLQueryItem(name: "vote_count.gte", value: "50"),
-                URLQueryItem(name: "include_adult", value: "false")
+                URLQueryItem(name: "sort_by", value: source.sortBy),
+                URLQueryItem(name: "vote_average.gte", value: String(format: "%.1f", filters.minVoteAverage)),
+                URLQueryItem(name: "include_adult", value: "false"),
+                URLQueryItem(name: "include_video", value: "false")
             ])
-            if englishOnly {
+
+            // Vote count: the audience mode sets the floor, and a source can
+            // raise it (sorting by rating with no floor surfaces films with
+            // three perfect votes).
+            let voteFloor = max(
+                filters.audienceMode.minimumVoteCount,
+                source.additionalVoteCountFloor ?? 0
+            )
+            items.append(URLQueryItem(name: "vote_count.gte", value: "\(voteFloor)"))
+            if let ceiling = filters.audienceMode.maximumVoteCount, ceiling > voteFloor {
+                items.append(URLQueryItem(name: "vote_count.lte", value: "\(ceiling)"))
+            }
+
+            if !filters.includeForeignLanguage {
                 items.append(URLQueryItem(name: "with_original_language", value: "en"))
             }
-            if !providerIds.isEmpty {
-                items.append(URLQueryItem(name: "with_watch_providers", value: providerIds.map { "\($0)" }.joined(separator: "|")))
-                items.append(URLQueryItem(name: "watch_region", value: region))
-                items.append(URLQueryItem(name: "with_watch_monetization_types", value: "flatrate"))
+
+            if !filters.watchProviderIds.isEmpty {
+                items.append(URLQueryItem(name: "with_watch_providers", value: filters.watchProviderIds.map { "\($0)" }.joined(separator: "|")))
+                items.append(URLQueryItem(name: "watch_region", value: filters.watchRegion))
+                // "free" and "ads" are still watch-tonight options at no extra
+                // cost, so they belong in the subscription bucket.
+                let monetization = filters.includeRentals
+                    ? "flatrate|free|ads|rent|buy"
+                    : "flatrate|free|ads"
+                items.append(URLQueryItem(name: "with_watch_monetization_types", value: monetization))
             }
-            if !genreIds.isEmpty {
-                items.append(URLQueryItem(name: "with_genres", value: genreIds.map { "\($0)" }.joined(separator: "|")))
+
+            // `|` is OR — a film matching any chosen genre qualifies.
+            if !filters.genreIds.isEmpty {
+                items.append(URLQueryItem(name: "with_genres", value: filters.genreIds.map { "\($0)" }.joined(separator: "|")))
             }
-            if let year = minimumYear {
-                items.append(URLQueryItem(name: "primary_release_date.gte", value: "\(year)-01-01"))
+            // `,` on without_genres is OR too: touching any of them excludes it.
+            if !filters.excludedGenreIds.isEmpty {
+                items.append(URLQueryItem(name: "without_genres", value: filters.excludedGenreIds.map { "\($0)" }.joined(separator: ",")))
             }
-            if let runtime = minimumRuntime {
-                items.append(URLQueryItem(name: "with_runtime.gte", value: "\(runtime)"))
+
+            // Runtime bounds.
+            if filters.excludeShorts {
+                items.append(URLQueryItem(name: "with_runtime.gte", value: "40"))
             }
-        case .discoverClassics(let providerIds, let region, let genreIds, let minVote, let page, let minimumYear, let minimumRuntime, let englishOnly):
-            items.append(contentsOf: [
-                URLQueryItem(name: "page", value: "\(page)"),
-                URLQueryItem(name: "sort_by", value: "vote_average.desc"),
-                URLQueryItem(name: "vote_average.gte", value: String(format: "%.1f", minVote)),
-                URLQueryItem(name: "vote_count.gte", value: "300"),
-                URLQueryItem(name: "include_adult", value: "false")
-            ])
-            if englishOnly {
-                items.append(URLQueryItem(name: "with_original_language", value: "en"))
+            if let maxRuntime = filters.maxRuntime {
+                items.append(URLQueryItem(name: "with_runtime.lte", value: "\(maxRuntime.rawValue)"))
             }
-            if !providerIds.isEmpty {
-                items.append(URLQueryItem(name: "with_watch_providers", value: providerIds.map { "\($0)" }.joined(separator: "|")))
-                items.append(URLQueryItem(name: "watch_region", value: region))
-                items.append(URLQueryItem(name: "with_watch_monetization_types", value: "flatrate"))
+
+            // Content rating ceiling. TMDB needs the country alongside it.
+            if let certification = filters.maxCertification {
+                items.append(URLQueryItem(name: "certification_country", value: "US"))
+                items.append(URLQueryItem(name: "certification.lte", value: certification.rawValue))
             }
-            if !genreIds.isEmpty {
-                items.append(URLQueryItem(name: "with_genres", value: genreIds.map { "\($0)" }.joined(separator: "|")))
+
+            // Release-date window: intersect the host's era filter with the
+            // source's own window so "2020+" still narrows an in-theaters pass
+            // instead of being overwritten by it.
+            let (earliest, latest) = Self.releaseWindow(for: filters, source: source)
+            if let earliest {
+                items.append(URLQueryItem(name: "primary_release_date.gte", value: earliest))
             }
-            if let year = minimumYear {
-                items.append(URLQueryItem(name: "primary_release_date.gte", value: "\(year)-01-01"))
+            if let latest {
+                items.append(URLQueryItem(name: "primary_release_date.lte", value: latest))
             }
-            if let runtime = minimumRuntime {
-                items.append(URLQueryItem(name: "with_runtime.gte", value: "\(runtime)"))
+
+            if source.theatricalOnly {
+                items.append(URLQueryItem(name: "with_release_type", value: "2|3"))
             }
         case .movieRecommendations(_, let page), .movieSimilar(_, let page):
             items.append(URLQueryItem(name: "page", value: "\(page)"))
@@ -277,5 +302,49 @@ enum TMDBEndpoint: Sendable {
         var components = URLComponents(string: APIConfiguration.TMDB.baseURL + path)
         components?.queryItems = queryItems
         return components?.url
+    }
+
+    // MARK: - Release Window
+
+    private static let apiDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    /// Intersect the host's era filter with the source's own recency window.
+    ///
+    /// Both constraints have to hold at once: asking for "1990s only" and
+    /// leaving the in-theaters source on should yield nothing from that source,
+    /// not quietly drop the era filter and serve this month's releases.
+    static func releaseWindow(
+        for filters: MovieNightFilters,
+        source: MovieNightDeckSource
+    ) -> (earliest: String?, latest: String?) {
+        var earliest: Date?
+        var latest: Date?
+
+        if let minimumYear = filters.minimumYear {
+            earliest = apiDateFormatter.date(from: "\(minimumYear)-01-01")
+        }
+        if let maximumYear = filters.maximumYear {
+            latest = apiDateFormatter.date(from: "\(maximumYear)-12-31")
+        }
+
+        if let windowDays = source.recencyWindowDays,
+           let windowStart = Calendar.current.date(byAdding: .day, value: -windowDays, to: Date()) {
+            // Take the later of the two lower bounds.
+            earliest = earliest.map { max($0, windowStart) } ?? windowStart
+            // A recency source never reaches into the future.
+            let today = Date()
+            latest = latest.map { min($0, today) } ?? today
+        }
+
+        return (
+            earliest.map { apiDateFormatter.string(from: $0) },
+            latest.map { apiDateFormatter.string(from: $0) }
+        )
     }
 }
