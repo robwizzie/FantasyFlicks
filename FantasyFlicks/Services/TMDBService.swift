@@ -463,6 +463,90 @@ final class TMDBService {
     }
 }
 
+// MARK: - Lenient Date Decoding
+//
+// TMDB sends `"release_date": ""` — an empty string, not null — for films with
+// no announced date. `decodeIfPresent` only short-circuits on null, so the
+// empty string reaches the decoder's date strategy, throws, and takes the
+// *entire* response down with it: one undated film anywhere in a search results
+// page was enough to return zero results to the user.
+//
+// These initialisers read date fields as strings and parse them leniently.
+// They live in extensions so each type keeps its memberwise initialiser.
+
+private enum TMDBDateParsing {
+    static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    /// nil for absent, empty, or unparseable values — all of which mean "no date".
+    static func date(from raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        return dayFormatter.date(from: raw)
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeTMDBDate(forKey key: Key) -> Date? {
+        let raw = try? decodeIfPresent(String.self, forKey: key)
+        return TMDBDateParsing.date(from: raw ?? nil)
+    }
+}
+
+extension TMDBMovie {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(Int.self, forKey: .id),
+            title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
+            originalTitle: try container.decodeIfPresent(String.self, forKey: .originalTitle),
+            overview: try container.decodeIfPresent(String.self, forKey: .overview),
+            posterPath: try container.decodeIfPresent(String.self, forKey: .posterPath),
+            backdropPath: try container.decodeIfPresent(String.self, forKey: .backdropPath),
+            releaseDate: container.decodeTMDBDate(forKey: .releaseDate),
+            genreIds: try container.decodeIfPresent([Int].self, forKey: .genreIds),
+            originalLanguage: try container.decodeIfPresent(String.self, forKey: .originalLanguage),
+            popularity: try container.decodeIfPresent(Double.self, forKey: .popularity),
+            voteAverage: try container.decodeIfPresent(Double.self, forKey: .voteAverage),
+            voteCount: try container.decodeIfPresent(Int.self, forKey: .voteCount),
+            adult: try container.decodeIfPresent(Bool.self, forKey: .adult),
+            video: try container.decodeIfPresent(Bool.self, forKey: .video)
+        )
+    }
+}
+
+extension TMDBMovieDetails {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(Int.self, forKey: .id),
+            title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
+            originalTitle: try container.decodeIfPresent(String.self, forKey: .originalTitle),
+            tagline: try container.decodeIfPresent(String.self, forKey: .tagline),
+            overview: try container.decodeIfPresent(String.self, forKey: .overview),
+            posterPath: try container.decodeIfPresent(String.self, forKey: .posterPath),
+            backdropPath: try container.decodeIfPresent(String.self, forKey: .backdropPath),
+            releaseDate: container.decodeTMDBDate(forKey: .releaseDate),
+            status: try container.decodeIfPresent(String.self, forKey: .status),
+            runtime: try container.decodeIfPresent(Int.self, forKey: .runtime),
+            budget: try container.decodeIfPresent(Int.self, forKey: .budget),
+            revenue: try container.decodeIfPresent(Int.self, forKey: .revenue),
+            genres: try container.decodeIfPresent([TMDBGenre].self, forKey: .genres) ?? [],
+            productionCompanies: try container.decodeIfPresent([TMDBProductionCompany].self, forKey: .productionCompanies) ?? [],
+            originalLanguage: try container.decodeIfPresent(String.self, forKey: .originalLanguage),
+            popularity: try container.decodeIfPresent(Double.self, forKey: .popularity),
+            voteAverage: try container.decodeIfPresent(Double.self, forKey: .voteAverage),
+            voteCount: try container.decodeIfPresent(Int.self, forKey: .voteCount),
+            homepage: try container.decodeIfPresent(String.self, forKey: .homepage),
+            imdbId: try container.decodeIfPresent(String.self, forKey: .imdbId)
+        )
+    }
+}
+
 // MARK: - TMDB Response Models
 
 struct TMDBMovieListResponse: Codable, Sendable {
@@ -487,6 +571,14 @@ struct TMDBMovie: Codable, Sendable {
     let voteCount: Int?
     let adult: Bool?
     let video: Bool?
+
+    // Declared here (not in the extension below) so the memberwise initialiser
+    // survives — `getFullMovie` builds a TMDBMovie by hand.
+    enum CodingKeys: String, CodingKey {
+        case id, title, originalTitle, overview, posterPath, backdropPath
+        case releaseDate, genreIds, originalLanguage, popularity
+        case voteAverage, voteCount, adult, video
+    }
 }
 
 struct TMDBMovieDetails: Codable, Sendable {
@@ -510,6 +602,13 @@ struct TMDBMovieDetails: Codable, Sendable {
     let voteCount: Int?
     let homepage: String?
     let imdbId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, originalTitle, tagline, overview, posterPath, backdropPath
+        case releaseDate, status, runtime, budget, revenue, genres
+        case productionCompanies, originalLanguage, popularity
+        case voteAverage, voteCount, homepage, imdbId
+    }
 }
 
 struct TMDBGenre: Codable, Sendable {
