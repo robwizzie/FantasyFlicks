@@ -13,18 +13,73 @@ enum SwipeDirection {
     case left, right
 }
 
+// MARK: - Exit Timing
+
+/// Tuning for the card's exit animation.
+///
+/// A namespace rather than statics on `SwipeCardView` because that type is
+/// generic over its content, and Swift doesn't allow static stored properties
+/// in generic types. They're shared across every instantiation anyway.
+private enum SwipeExit {
+    /// The card's exit is one-way, so it's an ease-out rather than a spring.
+    /// A spring has to settle, and `response: 0.35` was still visibly animating
+    /// long after the card had left the screen — time the user reads as lag.
+    ///
+    /// A dragged card's exit is scaled between these by how hard it was thrown:
+    /// a firm flick should snap away, while a card nudged just past the
+    /// threshold should carry through at the pace the hand set. A single fixed
+    /// duration made gentle swipes feel like the card was yanked out of reach.
+    static let fastFlightDuration = 0.20
+    static let slowFlightDuration = 0.32
+    /// Release speed (pt/s) at which the exit is fully at `fastFlightDuration`.
+    static let briskVelocity: CGFloat = 1400
+
+    /// Button taps aren't throws, so they get a deliberate, readable flick with
+    /// time to register the SKIP/WATCH stamp. At the drag speed this read as
+    /// the card vanishing rather than being swiped.
+    static let buttonFlightDuration = 0.40
+
+    /// Exit duration for a drag released at `velocity`.
+    static func flightDuration(forReleaseVelocity velocity: CGFloat) -> Double {
+        let speed = min(abs(velocity), briskVelocity)
+        let briskness = Double(speed / briskVelocity)
+        return slowFlightDuration - (slowFlightDuration - fastFlightDuration) * briskness
+    }
+
+    /// How far the card travels on its way out.
+    ///
+    /// Generous on purpose. The exit only has to look right until the card is
+    /// gone, and overshooting the screen edge buys margin for the handoff below
+    /// — at 600pt the card was still clipping the edge of a large display when
+    /// the deck advanced, and its removal visibly faded there.
+    static let flightDistance: CGFloat = 750
+
+    /// Fraction of the flight after which the deck advances.
+    ///
+    /// An ease-out is front-loaded: by 55% of the duration the card has covered
+    /// ~74% of its travel — 552pt, comfortably clear of the widest supported
+    /// screen (474pt needed, ~78pt spare). Handing off there lets the next card
+    /// come forward while this one is still animating, so the two overlap
+    /// instead of queueing.
+    static let handoffFraction = 0.55
+}
+
 // MARK: - Swipe Card View
 
 struct SwipeCardView<Content: View>: View {
     let content: Content
     let onSwipe: (SwipeDirection) -> Void
+    /// False for the cards sitting behind the top one. They render through this
+    /// same wrapper — identical view structure at every stack position is what
+    /// lets a card be *promoted* to the top instead of torn down and rebuilt —
+    /// but they don't take gestures until they get there.
+    let isActive: Bool
     /// External trigger for a programmatic swipe (from check/X buttons). Setting
     /// this to a non-nil direction fires the same fly-off animation as a real
     /// swipe, including the SKIP/WATCH stamp, then calls `onSwipe`.
     @Binding var programmaticSwipe: SwipeDirection?
 
     @State private var offset: CGSize = .zero
-    @State private var isDragging = false
     @State private var dragLocked = false  // true = confirmed horizontal, false = not yet decided
     @State private var dragRejected = false  // vertical drag detected, ignore until end
     /// When non-nil, drive the stamp from this value instead of the offset —
@@ -34,10 +89,13 @@ struct SwipeCardView<Content: View>: View {
     private let swipeThreshold: CGFloat = 80
     private let maxRotation: Double = 10
 
+
     init(@ViewBuilder content: () -> Content,
+         isActive: Bool = true,
          programmaticSwipe: Binding<SwipeDirection?> = .constant(nil),
          onSwipe: @escaping (SwipeDirection) -> Void) {
         self.content = content()
+        self.isActive = isActive
         self._programmaticSwipe = programmaticSwipe
         self.onSwipe = onSwipe
     }
@@ -50,13 +108,13 @@ struct SwipeCardView<Content: View>: View {
                 swipeOverlay
             }
             .gesture(
-                DragGesture(minimumDistance: 20)
+                DragGesture(minimumDistance: 8)
                     .onChanged { value in
                         // Decide direction lock on first significant movement
                         if !dragLocked && !dragRejected {
                             let horizontal = abs(value.translation.width)
                             let vertical = abs(value.translation.height)
-                            if horizontal > 15 || vertical > 15 {
+                            if horizontal > 8 || vertical > 8 {
                                 if horizontal > vertical * 0.8 {
                                     dragLocked = true
                                 } else {
@@ -70,36 +128,48 @@ struct SwipeCardView<Content: View>: View {
 
                         guard dragLocked else { return }
 
-                        isDragging = true
-                        withAnimation(.interactiveSpring(response: 0.15, dampingFraction: 0.8)) {
-                            offset = value.translation
-                        }
+                        // Assigned directly — no animation. Wrapping this in an
+                        // `interactiveSpring` put the card ~0.15s behind the
+                        // finger for the whole drag, which is the single
+                        // biggest reason a manual swipe felt heavy. A dragged
+                        // card should be pinned to the touch, not chasing it.
+                        offset = value.translation
                     }
                     .onEnded { value in
                         defer {
                             dragLocked = false
                             dragRejected = false
                         }
-                        guard dragLocked else {
-                            isDragging = false
-                            return
-                        }
-                        isDragging = false
+                        guard dragLocked else { return }
                         handleSwipeEnd(translation: value.translation, velocity: value.velocity)
-                    }
+                    },
+                // Masked rather than conditionally attached: adding or removing
+                // a gesture would change the view's structural identity, and a
+                // card that changes identity on promotion is rebuilt from
+                // scratch — the flash this whole arrangement exists to avoid.
+                including: isActive ? .all : .none
             )
-            .animation(isDragging ? nil : .spring(response: 0.5, dampingFraction: 0.7, blendDuration: 0.1), value: offset)
+            // No implicit animation on `offset`. Every move that should animate
+            // — spring-back, fly-off — states its own; the drag deliberately
+            // doesn't. An implicit animation here competed with those explicit
+            // transactions and re-animated the drag we just chose not to.
             .onChange(of: programmaticSwipe) { _, direction in
-                guard let direction else { return }
+                guard isActive, let direction else { return }
                 animateProgrammatic(direction: direction)
             }
     }
 
     // MARK: - Computed Properties
 
+    /// Tilt with the drag, but never past `maxRotation`.
+    ///
+    /// This used to be unclamped, so at full exit travel the card reached 20° —
+    /// double the stated maximum. A steeply rotated card sweeps a much wider
+    /// footprint than its flat width, which is why it was still clipping the
+    /// screen edge at the point the deck advanced.
     private var rotationAngle: Double {
         let progress = Double(offset.width) / 300
-        return progress * maxRotation
+        return max(-maxRotation, min(maxRotation, progress * maxRotation))
     }
 
     private var swipeProgress: Double {
@@ -160,40 +230,40 @@ struct SwipeCardView<Content: View>: View {
         let horizontalAmount = translation.width
         let velocityBoost = velocity.width / 4
 
+        let exitDuration = SwipeExit.flightDuration(forReleaseVelocity: velocity.width)
+
         if horizontalAmount + velocityBoost > swipeThreshold {
-            flyOff(direction: .right, startHeight: translation.height * 0.5)
+            flyOff(direction: .right, startHeight: translation.height * 0.5, duration: exitDuration)
         } else if horizontalAmount + velocityBoost < -swipeThreshold {
-            flyOff(direction: .left, startHeight: translation.height * 0.5)
+            flyOff(direction: .left, startHeight: translation.height * 0.5, duration: exitDuration)
         } else {
             // Spring back with bounce
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
                 offset = .zero
             }
         }
     }
 
-    /// Animate the card off-screen in the given direction, then notify the
-    /// parent. Slightly delaying `onSwipe` until the fly-off is mostly done
-    /// keeps the next card from popping in while this one is still on screen,
-    /// which was the "jump" users noticed.
-    private func flyOff(direction: SwipeDirection, startHeight: CGFloat = 0) {
-        let targetX: CGFloat = direction == .right ? 600 : -600
-        let flightDuration = 0.34
+    /// Animate the card off-screen in the given direction, notifying the parent
+    /// partway through so the next card starts coming forward while this one is
+    /// still leaving. The two motions overlap rather than running back to back.
+    private func flyOff(
+        direction: SwipeDirection,
+        startHeight: CGFloat = 0,
+        duration: Double = SwipeExit.slowFlightDuration
+    ) {
+        let targetX: CGFloat = direction == .right ? SwipeExit.flightDistance : -SwipeExit.flightDistance
 
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+        withAnimation(.easeOut(duration: duration)) {
             offset = CGSize(width: targetX, height: startHeight)
         }
 
-        // Hand off to the parent right as the card clears the viewport.
-        // Parent advances currentIndex, which fades in the next card — by then
-        // this card is >85% off-screen so there's no visible overlap.
-        DispatchQueue.main.asyncAfter(deadline: .now() + flightDuration * 0.75) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration * SwipeExit.handoffFraction) {
             onSwipe(direction)
         }
     }
 
-    /// External (button-tap) swipe. Plays the stamp immediately and then
-    /// performs the same fly-off animation as a real drag-swipe.
+    /// External (button-tap) swipe. Stamps and leaves in one motion.
     private func animateProgrammatic(direction: SwipeDirection) {
         // Clear the binding right away so subsequent rapid taps all register
         // as fresh value changes, not deduped identical values.
@@ -201,21 +271,13 @@ struct SwipeCardView<Content: View>: View {
             programmaticSwipe = nil
         }
 
-        // Pin the stamp so it's visible even before offset-based progress
-        // catches up.
-        withAnimation(.easeIn(duration: 0.08)) {
-            forcedStampDirection = direction
-        }
+        // Pin the stamp without waiting on it. The overlay fades it in over
+        // 0.12s while the card is already moving; the previous version nudged
+        // the card 120pt, waited a further 0.1s, and only then started the
+        // exit — a tenth of a second of nothing happening on every tap.
+        forcedStampDirection = direction
 
-        // Nudge the offset so the stamp's opacity transitions smoothly into
-        // the fly-off animation.
-        withAnimation(.spring(response: 0.18, dampingFraction: 0.9)) {
-            offset = CGSize(width: direction == .right ? 120 : -120, height: 0)
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            flyOff(direction: direction)
-        }
+        flyOff(direction: direction, duration: SwipeExit.buttonFlightDuration)
     }
 }
 
@@ -226,6 +288,12 @@ struct MovieNightCardContent: View {
     let providers: [WatchProvider]
     let hasSeenIt: Bool
     var isOnWatchlist: Bool = false
+    /// Only the top card casts one. A drop shadow forces an offscreen render
+    /// pass per card per frame, and the stack's shadows are almost entirely
+    /// occluded by the card in front anyway — three of them animating at once
+    /// cost frames for something nobody can see. Kept as a *value* change
+    /// rather than a conditional modifier so the view's identity is unaffected.
+    var showsShadow: Bool = true
     let onToggleSeen: () -> Void
     var onToggleWatchlist: () -> Void = {}
     let onTapDetail: () -> Void
@@ -248,7 +316,12 @@ struct MovieNightCardContent: View {
             RoundedRectangle(cornerRadius: FFCornerRadius.xxl)
                 .stroke(Color.white.opacity(0.15), lineWidth: 1)
         }
-        .shadow(color: Color.black.opacity(0.35), radius: 16, x: 0, y: 8)
+        .shadow(
+            color: Color.black.opacity(showsShadow ? 0.35 : 0),
+            radius: showsShadow ? 16 : 0,
+            x: 0,
+            y: showsShadow ? 8 : 0
+        )
     }
 
     // MARK: - Poster Background
@@ -427,6 +500,12 @@ struct MovieNightCardContent: View {
             Spacer()
         }
         .padding(FFSpacing.md)
+        // Both pills change width when they activate (they gain a label), and
+        // the rating row appears with the seen state. Without these the change
+        // lands as a hard snap — and the star row's transition never plays,
+        // since nothing was driving an animation for it.
+        .animation(FFAnimations.smooth, value: isOnWatchlist)
+        .animation(FFAnimations.smooth, value: hasSeenIt)
     }
 
     private func pill(icon: String, label: String?, active: Bool, action: @escaping () -> Void) -> some View {
@@ -492,63 +571,70 @@ struct CardStackView: View {
         self.onTapDetail = onTapDetail
     }
 
-    var body: some View {
-        ZStack {
-            // Show up to 3 cards in the stack
-            ForEach(visibleCardIndices.reversed(), id: \.self) { index in
-                let movie = movies[index]
-                let stackPosition = index - currentIndex
-
-                if stackPosition == 0 {
-                    // Top card — interactive
-                    SwipeCardView(
-                        content: {
-                            MovieNightCardContent(
-                                movie: movie,
-                                providers: providers[movie.tmdbId] ?? [],
-                                hasSeenIt: seenMovies.contains(movie.tmdbId),
-                                isOnWatchlist: watchlistMovies.contains(movie.tmdbId),
-                                onToggleSeen: { onToggleSeen(movie.tmdbId) },
-                                onToggleWatchlist: { onToggleWatchlist(movie.tmdbId) },
-                                onTapDetail: { onTapDetail(movie) }
-                            )
-                        },
-                        programmaticSwipe: $programmaticSwipe,
-                        onSwipe: { direction in
-                            onSwipe(direction)
-                        }
-                    )
-                    .id(movie.tmdbId)   // force state reset per card to avoid stale offset
-                    .zIndex(3)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 0.95)),
-                        removal: .opacity
-                    ))
-                } else {
-                    // Background cards — static, slightly offset
-                    MovieNightCardContent(
-                        movie: movie,
-                        providers: providers[movie.tmdbId] ?? [],
-                        hasSeenIt: false,
-                        onToggleSeen: {},
-                        onTapDetail: {}
-                    )
-                    .scaleEffect(1.0 - CGFloat(stackPosition) * 0.04)
-                    .offset(y: CGFloat(stackPosition) * 10)
-                    .opacity(1.0 - Double(stackPosition) * 0.3)
-                    .zIndex(Double(3 - stackPosition))
-                    .allowsHitTesting(false)
-                }
-            }
-        }
-        .animation(.spring(response: 0.45, dampingFraction: 0.75), value: currentIndex)
+    /// A film plus where it currently sits in the stack.
+    ///
+    /// A concrete `Identifiable` type rather than an index, because `ForEach`
+    /// identity has to follow the *film*. Keying on the array index meant that
+    /// after a swipe the element at index N+1 kept its identity while its
+    /// content changed from a background card to the top card — SwiftUI tore
+    /// the subtree down and rebuilt it, which reset the poster's
+    /// `CachedAsyncImage` back to its placeholder and re-ran the insertion
+    /// transition on a card the user could already see. That was the flash.
+    private struct StackedCard: Identifiable {
+        let movie: FFMovie
+        let stackPosition: Int
+        var id: Int { movie.tmdbId }
     }
 
-    private var visibleCardIndices: [Int] {
+    var body: some View {
+        ZStack {
+            // Every card — top or background — renders through the same
+            // wrapper. Promotion is then just a change of modifier values
+            // (scale, offset, opacity), which animates smoothly, instead of a
+            // teardown and rebuild.
+            ForEach(visibleCards) { card in
+                SwipeCardView(
+                    content: {
+                        MovieNightCardContent(
+                            movie: card.movie,
+                            providers: providers[card.movie.tmdbId] ?? [],
+                            hasSeenIt: seenMovies.contains(card.movie.tmdbId),
+                            isOnWatchlist: watchlistMovies.contains(card.movie.tmdbId),
+                            showsShadow: card.stackPosition == 0,
+                            onToggleSeen: { onToggleSeen(card.movie.tmdbId) },
+                            onToggleWatchlist: { onToggleWatchlist(card.movie.tmdbId) },
+                            onTapDetail: { onTapDetail(card.movie) }
+                        )
+                    },
+                    isActive: card.stackPosition == 0,
+                    programmaticSwipe: card.stackPosition == 0 ? $programmaticSwipe : .constant(nil),
+                    onSwipe: onSwipe
+                )
+                .scaleEffect(1.0 - CGFloat(card.stackPosition) * 0.04)
+                .offset(y: CGFloat(card.stackPosition) * 10)
+                .opacity(1.0 - Double(card.stackPosition) * 0.3)
+                .zIndex(Double(-card.stackPosition))
+                .allowsHitTesting(card.stackPosition == 0)
+                // Only ever plays for a card entering the back of the stack or
+                // the swiped card leaving it — both off-screen or fully behind
+                // another card, so nothing visibly fades in place.
+                .transition(.opacity)
+            }
+        }
+        // Tightened from `response: 0.45`. The card behind only has to travel
+        // 10pt and scale 4% to reach the front — at 0.45 that read as the deck
+        // easing forward long after the swipe was over. High damping keeps it
+        // from overshooting at the faster rate.
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: currentIndex)
+    }
+
+    private var visibleCards: [StackedCard] {
         let start = currentIndex
         let end = min(currentIndex + 3, movies.count)
         guard start < end else { return [] }
-        return Array(start..<end)
+        return (start..<end).map {
+            StackedCard(movie: movies[$0], stackPosition: $0 - currentIndex)
+        }
     }
 }
 

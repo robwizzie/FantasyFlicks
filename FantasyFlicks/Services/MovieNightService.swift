@@ -207,13 +207,21 @@ final class MovieNightService {
 
         let docRef = db.collection("movieNightSessions").document(sessionId)
         let snapshot = try await docRef.getDocument()
-        guard let session = try? snapshot.data(as: MovieNightSession.self) else { return }
+        guard snapshot.exists else { return }
 
-        if session.hostId == userId {
-            // Host: delete the entire session document
+        // Read `hostId` off the raw data rather than decoding the whole
+        // session. Decoding the full model here meant one unreadable field —
+        // a document written by a different build, a filter enum gaining a
+        // case — made `try?` return nil and the delete silently do nothing.
+        // The night then stayed in the user's list *and* kept counting against
+        // "No Repeats", with no error to explain why.
+        let hostId = snapshot.data()?["hostId"] as? String
+
+        if hostId == userId {
+            // Host: delete the entire session document, for everyone.
             try await docRef.delete()
         } else {
-            // Non-host: just remove self from participants
+            // Non-host: just remove self from participants.
             try await leaveSession(sessionId: sessionId)
         }
     }
@@ -234,6 +242,75 @@ final class MovieNightService {
         return snapshot.documents.compactMap { try? $0.data(as: MovieNightSession.self) }
             .filter { !$0.isExpired || $0.status == .results }
             .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// Every tmdbId that has already appeared in one of this user's Movie Night
+    /// decks, so a new night can skip them.
+    ///
+    /// **Deleted nights are excluded, by construction.** This query matches on
+    /// `participantIds arrayContains userId`, which is exactly what deletion
+    /// severs: a host's delete removes the document outright, and a
+    /// participant's removes them from `participantIds` via `leaveSession`.
+    /// Either way the session stops matching here, so its films are no longer
+    /// suppressed. `deckTmdbIds` is stored only on the session document —
+    /// there's no local cache or user-doc mirror that could outlive it.
+    /// If that predicate ever changes, this guarantee changes with it.
+    ///
+    /// Deliberately ignores expiry and outcome: a film that was swiped past,
+    /// or sat in a session nobody finished, is still one the group has already
+    /// been offered. Best-effort — a failure here means a possible repeat, not
+    /// a broken deck, so it returns empty rather than throwing.
+    func pastDeckTmdbIds(excluding sessionId: String? = nil) async -> Set<Int> {
+        guard let userId = authService.currentUser?.id else { return [] }
+
+        do {
+            // No `order(by:)` — pairing one with the array-contains filter would
+            // demand a composite Firestore index. The limit is set high enough
+            // that a regular host stays well inside it; past that, Firestore
+            // returns an arbitrary subset and a very old night could slip
+            // through as a repeat. Preferable to a query that can't run at all.
+            let snapshot = try await db.collection("movieNightSessions")
+                .whereField("participantIds", arrayContains: userId)
+                .limit(to: 60)
+                .getDocuments()
+
+            var ids = Set<Int>()
+            for document in snapshot.documents {
+                guard let session = try? document.data(as: MovieNightSession.self),
+                      session.id != sessionId else { continue }
+                ids.formUnion(session.deckTmdbIds)
+            }
+            return ids
+        } catch {
+            return []
+        }
+    }
+
+    /// Everything the host's own settings strip out of a deck before TMDB is
+    /// asked for anything.
+    ///
+    /// Shared by the deck builder and the live match-count readout so the two
+    /// can't disagree. They did: the readout quoted TMDB's raw total, which
+    /// knows nothing about seen films, past decks or the watchlist, so a heavy
+    /// watcher was told two thousand films matched and then handed an empty
+    /// deck built from the same filters.
+    func localExclusions(
+        for filters: MovieNightFilters,
+        excludingSession sessionId: String? = nil
+    ) async -> Set<Int> {
+        var ids = Set<Int>()
+
+        if filters.excludeSeenMode != .none {
+            ids.formUnion(SeenMoviesService.shared.seenTmdbIds)
+        }
+        if filters.excludePastDeckMovies {
+            ids.formUnion(await pastDeckTmdbIds(excluding: sessionId))
+        }
+        if filters.excludeWatchlist {
+            ids.formUnion(SeenMoviesService.shared.watchlist)
+        }
+
+        return ids
     }
 
     // MARK: - Real-Time Listeners

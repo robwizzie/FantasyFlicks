@@ -252,6 +252,15 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
     /// When false (the default) the deck is limited to English-language films.
     /// Turning it on opens up world cinema — Parasite, Spirited Away, Amélie.
     var includeForeignLanguage: Bool
+    /// Drop anything that has already turned up in one of this user's earlier
+    /// Movie Night decks, whether or not it was ever watched. Popular films
+    /// dominate the discover queries every night otherwise, so the same
+    /// shortlist keeps reappearing for a group that swipes regularly.
+    var excludePastDeckMovies: Bool
+    /// Drop anything sitting on the user's watchlist. Some people want Movie
+    /// Night to surface things they haven't already earmarked; others want
+    /// exactly the opposite, so this is opt-in.
+    var excludeWatchlist: Bool
 
     static let `default` = MovieNightFilters(
         genreIds: [],
@@ -270,7 +279,9 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         excludeShorts: true,
         maxRuntime: nil,
         maxCertification: nil,
-        includeForeignLanguage: false
+        includeForeignLanguage: false,
+        excludePastDeckMovies: false,
+        excludeWatchlist: false
     )
 
     enum CodingKeys: String, CodingKey {
@@ -281,6 +292,7 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         case includeForeignLanguage
         case excludedGenreIds, includeRentals, audienceMode
         case maximumYear, maxRuntime, maxCertification
+        case excludePastDeckMovies, excludeWatchlist
     }
 
     init(genreIds: [Int], excludedGenreIds: [Int] = [], watchProviderIds: [Int],
@@ -291,7 +303,9 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
          minimumYear: Int? = nil, maximumYear: Int? = nil,
          excludeShorts: Bool = true, maxRuntime: RuntimeLimit? = nil,
          maxCertification: ContentRating? = nil,
-         includeForeignLanguage: Bool = false) {
+         includeForeignLanguage: Bool = false,
+         excludePastDeckMovies: Bool = false,
+         excludeWatchlist: Bool = false) {
         self.genreIds = genreIds
         self.excludedGenreIds = excludedGenreIds
         self.watchProviderIds = watchProviderIds
@@ -309,6 +323,8 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         self.maxRuntime = maxRuntime
         self.maxCertification = maxCertification
         self.includeForeignLanguage = includeForeignLanguage
+        self.excludePastDeckMovies = excludePastDeckMovies
+        self.excludeWatchlist = excludeWatchlist
     }
 
     init(from decoder: Decoder) throws {
@@ -332,6 +348,8 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         maximumYear = try container.decodeIfPresent(Int.self, forKey: .maximumYear)
         maxRuntime = try container.decodeIfPresent(RuntimeLimit.self, forKey: .maxRuntime)
         maxCertification = try container.decodeIfPresent(ContentRating.self, forKey: .maxCertification)
+        excludePastDeckMovies = try container.decodeIfPresent(Bool.self, forKey: .excludePastDeckMovies) ?? false
+        excludeWatchlist = try container.decodeIfPresent(Bool.self, forKey: .excludeWatchlist) ?? false
 
         // Backward compatibility: read new enum or fall back to old boolean
         if let mode = try? container.decode(ExcludeSeenMode.self, forKey: .excludeSeenMode) {
@@ -361,9 +379,20 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         try container.encodeIfPresent(maximumYear, forKey: .maximumYear)
         try container.encodeIfPresent(maxRuntime, forKey: .maxRuntime)
         try container.encodeIfPresent(maxCertification, forKey: .maxCertification)
+        try container.encode(excludePastDeckMovies, forKey: .excludePastDeckMovies)
+        try container.encode(excludeWatchlist, forKey: .excludeWatchlist)
     }
 
     // MARK: - Summary Helpers
+
+    /// Join names for a single summary chip, keeping it short enough to sit on
+    /// one line next to the others. Naming all fourteen genres made one chip
+    /// wider than the card, and "Action, Comedy, Adventure, Animation, Crime,
+    /// Family, Fanta…" tells the host less than a count does.
+    private static func chipList(_ names: [String], showing limit: Int = 3) -> String {
+        guard names.count > limit else { return names.joined(separator: ", ") }
+        return names.prefix(limit).joined(separator: ", ") + " +\(names.count - limit) more"
+    }
 
     /// Short labels for every non-default filter, for lobby/review chips.
     /// Anything the host set should be visible before they commit to a deck.
@@ -372,17 +401,17 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
 
         if !genreIds.isEmpty {
             let names = genreIds.compactMap { genreNames[$0] }
-            chips.append(("theatermasks.fill", names.isEmpty ? "\(genreIds.count) genres" : names.joined(separator: ", ")))
+            chips.append(("theatermasks.fill", names.isEmpty ? "\(genreIds.count) genres" : Self.chipList(names)))
         }
         if !excludedGenreIds.isEmpty {
             let names = excludedGenreIds.compactMap { genreNames[$0] }
-            chips.append(("nosign", "No " + (names.isEmpty ? "\(excludedGenreIds.count) genres" : names.joined(separator: ", "))))
+            chips.append(("nosign", "No " + (names.isEmpty ? "\(excludedGenreIds.count) genres" : Self.chipList(names))))
         }
         if !watchProviderIds.isEmpty {
             let names = StreamingProvider.allCases
                 .filter { watchProviderIds.contains($0.id) }
                 .map { $0.name }
-            chips.append(("play.tv.fill", names.joined(separator: ", ")))
+            chips.append(("play.tv.fill", Self.chipList(names)))
             if includeRentals { chips.append(("creditcard.fill", "Rentals OK")) }
         }
         if let maxRuntime {
@@ -410,6 +439,12 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         }
         if excludeSeenMode != .none {
             chips.append(("eye.slash.fill", excludeSeenMode.displayName))
+        }
+        if excludePastDeckMovies {
+            chips.append(("clock.arrow.circlepath", "No repeats"))
+        }
+        if excludeWatchlist {
+            chips.append(("bookmark.slash.fill", "Not watchlisted"))
         }
         return chips
     }
@@ -500,6 +535,34 @@ enum StreamingProvider: Int, CaseIterable, Identifiable {
         }
     }
 
+    /// TMDB's own logo for this service.
+    ///
+    /// Hardcoded rather than fetched: these are stable CDN paths, and reading
+    /// them from `/watch/providers/movie` would mean an extra round-trip before
+    /// the filter screen could draw anything. Pulled from that endpoint and
+    /// each verified to return a 200.
+    var logoPath: String {
+        switch self {
+        case .netflix: return "/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg"
+        case .amazonPrime: return "/pvske1MyAoymrs5bguRfVqYiM9a.jpg"
+        case .disneyPlus: return "/97yvRBw1GzX7fXprcF80er19ot.jpg"
+        case .hulu: return "/bxBlRPEPpMVDc4jMhSrTf2339DW.jpg"
+        case .max: return "/jbe4gVSfRlbPTdESXhEKpornsfu.jpg"
+        case .appleTVPlus: return "/mcbz1LgtErU9p4UdbZ0rG6RTWHX.jpg"
+        case .peacock: return "/2aGrp1xw3qhwCYvNGAJZPdjfeeX.jpg"
+        case .paramountPlus: return "/h5DcR0J2EESLitnhR8xLG1QymTE.jpg"
+        case .tubi: return "/zLYr7OPvpskMA4S79E3vlCi71iC.jpg"
+        case .crunchyroll: return "/fzN5Jok5Ig1eJ7gyNGoMhnLSCfh.jpg"
+        }
+    }
+
+    var logoURL: URL? {
+        URL(string: "\(APIConfiguration.TMDB.imageBaseURL)/\(APIConfiguration.TMDB.ProfileSize.medium.rawValue)\(logoPath)")
+    }
+
+    /// Fallback only, for when the logo hasn't loaded yet or can't be reached.
+    /// These are approximations — `peacock` was previously used here and isn't
+    /// an SF Symbol at all, which is why that one rendered as nothing.
     var iconName: String {
         switch self {
         case .netflix: return "play.rectangle.fill"
@@ -508,7 +571,7 @@ enum StreamingProvider: Int, CaseIterable, Identifiable {
         case .hulu: return "play.square.fill"
         case .max: return "play.circle.fill"
         case .appleTVPlus: return "appletv.fill"
-        case .peacock: return "peacock"
+        case .peacock: return "bird.fill"
         case .paramountPlus: return "mountain.2.fill"
         case .tubi: return "tv.fill"
         case .crunchyroll: return "leaf.fill"

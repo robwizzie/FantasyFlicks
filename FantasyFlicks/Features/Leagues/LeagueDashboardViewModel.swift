@@ -122,9 +122,6 @@ final class LeagueDashboardViewModel: ObservableObject {
             }
 
             let draftOrder = draftData["draftOrder"] as? [String] ?? []
-            let settingsData = leagueData["settings"] as? [String: Any] ?? [:]
-            let oscarSettingsData = settingsData["oscarSettings"] as? [String: Any] ?? [:]
-            let pointsPerPick = oscarSettingsData["pointsPerCorrectPick"] as? Double ?? 1.0
 
             // Get all picks
             let picksSnapshot = try await db.collection("drafts").document(draftId)

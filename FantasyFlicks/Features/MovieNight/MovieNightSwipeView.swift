@@ -9,6 +9,11 @@ import SwiftUI
 
 struct MovieNightSwipeView: View {
     @ObservedObject var viewModel: MovieNightViewModel
+    /// Observed, not just read. The watchlist and seen sets live here, and
+    /// reading them off the singleton without subscribing meant tapping the
+    /// bookmark changed the stored value but never redrew the card — the icon
+    /// only caught up when some other state change happened to force a redraw.
+    @StateObject private var seenService = SeenMoviesService.shared
     @State private var selectedMovieForDetail: FFMovie?
     /// When set, triggers a programmatic fly-off animation on the top card so
     /// tapping the check or X buttons shows the SKIP/WATCH stamp exactly like
@@ -98,7 +103,7 @@ struct MovieNightSwipeView: View {
                 currentIndex: viewModel.currentCardIndex,
                 providers: viewModel.movieProviders,
                 seenMovies: viewModel.seenMovieIds,
-                watchlistMovies: SeenMoviesService.shared.watchlist,
+                watchlistMovies: seenService.watchlist,
                 programmaticSwipe: $pendingProgrammaticSwipe,
                 onSwipe: { direction in
                     Task { await viewModel.swipe(direction: direction) }
@@ -106,16 +111,16 @@ struct MovieNightSwipeView: View {
                 onToggleSeen: { tmdbId in
                     viewModel.toggleSeenIt(tmdbId: tmdbId)
                     if let movie = viewModel.deckMovies.first(where: { $0.tmdbId == tmdbId }) {
-                        SeenMoviesService.shared.toggleSeen(movie)
+                        seenService.toggleSeen(movie)
                     } else {
-                        SeenMoviesService.shared.toggleSeen(tmdbId: tmdbId)
+                        seenService.toggleSeen(tmdbId: tmdbId)
                     }
                 },
                 onToggleWatchlist: { tmdbId in
                     if let movie = viewModel.deckMovies.first(where: { $0.tmdbId == tmdbId }) {
-                        SeenMoviesService.shared.toggleWatchlist(movie)
+                        seenService.toggleWatchlist(movie)
                     } else {
-                        SeenMoviesService.shared.toggleWatchlist(tmdbId: tmdbId)
+                        seenService.toggleWatchlist(tmdbId: tmdbId)
                     }
                 },
                 onTapDetail: { movie in
@@ -186,7 +191,7 @@ struct MovieNightSwipeView: View {
                 size: 40
             ) {
                 if let movie = currentMovie {
-                    SeenMoviesService.shared.toggleWatchlist(movie)
+                    seenService.toggleWatchlist(movie)
                 }
             }
 
@@ -479,7 +484,7 @@ struct MovieNightSwipeView: View {
 
     private var currentMovieIsOnWatchlist: Bool {
         guard let movie = currentMovie else { return false }
-        return SeenMoviesService.shared.isOnWatchlist(tmdbId: movie.tmdbId)
+        return seenService.isOnWatchlist(tmdbId: movie.tmdbId)
     }
 }
 

@@ -17,7 +17,9 @@ import FirebaseFirestore
 struct DiaryEntry: Codable, Identifiable, Hashable {
     let id: String
     let tmdbId: Int
-    let watchedDate: Date
+    /// Mutable so an external sync can correct the date when the source
+    /// entry is edited (see `applyExternalDiaryEntry`).
+    var watchedDate: Date
     // Legacy integer rating for back-compat with older saved data. New code
     // should read/write `ratingStars` which supports half-stars.
     var rating: Int?
@@ -38,6 +40,14 @@ struct DiaryEntry: Codable, Identifiable, Hashable {
         if let rs = ratingStars { return rs }
         if let r = rating { return Double(r) }
         return nil
+    }
+
+    /// True when the RSS sync created this entry. CSV backfill tags entries
+    /// with their Letterboxd URI instead, and hand-logged watches carry no tag
+    /// at all — the sync is allowed to adopt both of those, but must never
+    /// overwrite a different entry it created itself.
+    var isLetterboxdFeedEntry: Bool {
+        externalId?.hasPrefix("letterboxd-entry-") == true
     }
 
     init(tmdbId: Int, watchedDate: Date = Date(), rating: Int? = nil,
@@ -125,6 +135,59 @@ struct CachedMovie: Codable, Identifiable, Hashable {
         backdropPath = try c.decodeIfPresent(String.self, forKey: .backdropPath)
         year = try c.decodeIfPresent(Int.self, forKey: .year)
         voteAverage = try c.decodeIfPresent(Double.self, forKey: .voteAverage)
+    }
+}
+
+// MARK: - Letterboxd Import Result
+
+/// Outcome of importing one Letterboxd CSV.
+///
+/// Deliberately separates "we couldn't read the file", "we read it but it had
+/// no film rows" and "we had rows but TMDB matched none of them". These used to
+/// collapse into a bare `0`, which made a tokenizer bug that swallowed every
+/// row present as a TMDB matching problem.
+struct LetterboxdImportResult: Sendable {
+    /// Films matched on TMDB and written to the local stores.
+    var matched: Int = 0
+    /// Rows we parsed but couldn't confidently match, by title.
+    var unmatchedTitles: [String] = []
+    /// Set when the file itself was unusable — nothing was parsed at all.
+    var failureReason: String?
+
+    /// Film rows we got out of the file, matched or not.
+    var parsedRows: Int { matched + unmatchedTitles.count }
+
+    /// Unmatched titles with a multi-file import's repeats collapsed. The same
+    /// film appears in watched.csv, ratings.csv *and* diary.csv, so listing it
+    /// once per file reads like three separate failures.
+    var distinctUnmatchedTitles: [String] {
+        var seen = Set<String>()
+        return unmatchedTitles.filter { seen.insert($0.lowercased()).inserted }
+    }
+
+    var isSuccess: Bool { matched > 0 }
+
+    /// One line the import sheet can show verbatim.
+    var summary: String {
+        if parsedRows == 0 {
+            return failureReason ?? "No film rows in that file — pick the CSVs from your Letterboxd export."
+        }
+        if matched == 0 {
+            return "Read \(parsedRows) \(parsedRows == 1 ? "row" : "rows") but couldn't match any on TMDB. Check your connection and try again."
+        }
+        let films = "Imported \(matched) \(matched == 1 ? "movie" : "movies")"
+        let skipped = distinctUnmatchedTitles.count
+        guard skipped > 0 else { return films }
+        return "\(films) · \(skipped) we couldn't match"
+    }
+
+    /// Combine per-file results so a multi-file selection reports one total.
+    static func + (lhs: Self, rhs: Self) -> Self {
+        Self(
+            matched: lhs.matched + rhs.matched,
+            unmatchedTitles: lhs.unmatchedTitles + rhs.unmatchedTitles,
+            failureReason: lhs.failureReason ?? rhs.failureReason
+        )
     }
 }
 
@@ -414,7 +477,11 @@ final class SeenMoviesService: ObservableObject {
         var index = diary.firstIndex { $0.externalId == externalId }
         if index == nil {
             index = diary.firstIndex { entry in
-                entry.externalId == nil &&
+                // Adopt anything for this film on this day that didn't come
+                // from the feed — a CSV backfill row or a hand-logged watch.
+                // Feed entries are excluded so a second viewing logged on the
+                // same day gets its own row instead of clobbering the first.
+                !entry.isLetterboxdFeedEntry &&
                 entry.tmdbId == tmdbId &&
                 Calendar.current.isDate(entry.watchedDate, inSameDayAs: watchedDate)
             }
@@ -632,6 +699,72 @@ final class SeenMoviesService: ObservableObject {
         }
     }
 
+    // MARK: - Cloud Restore
+
+    /// Pull this user's media state back down from Firestore when the device
+    /// has none of its own.
+    ///
+    /// Everything here is already pushed up by `pushToFirestore` so friends can
+    /// read it, but nothing ever read it back — so a reinstall or a second
+    /// device started empty, and a connected Letterboxd account could only
+    /// recover the ~100 entries still in the RSS window.
+    ///
+    /// Guarded on *local emptiness* rather than merged, deliberately. A merge
+    /// would need per-field conflict resolution across two devices; refusing to
+    /// run when there's anything here cannot lose data, and covers the case
+    /// that actually happens.
+    func restoreFromCloudIfEmpty() async {
+        guard seenTmdbIds.isEmpty, watchlist.isEmpty, ratings.isEmpty, diary.isEmpty else { return }
+        guard let userId = AuthenticationService.shared.currentUser?.id else { return }
+
+        guard let snapshot = try? await db.collection("users").document(userId).getDocument(),
+              let data = snapshot.data() else { return }
+
+        let cloudSeen = Set(data["mediaSeenIds"] as? [Int] ?? [])
+        let cloudWatchlist = Set(data["mediaWatchlistIds"] as? [Int] ?? [])
+        let cloudRatings = Self.decodeRatings(data["mediaRatings"] as? [String: Any] ?? [:])
+
+        let cloudDiary: [DiaryEntry] = (data["mediaDiaryJSON"] as? String)
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode([DiaryEntry].self, from: $0) } ?? []
+
+        let cloudCache: [CachedMovie] = (data["mediaCacheJSON"] as? String)
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode([CachedMovie].self, from: $0) } ?? []
+
+        let cloudOverrides = (data["favoritePosterOverrides"] as? [String: String] ?? [:])
+            .reduce(into: [Int: String]()) { result, pair in
+                if let key = Int(pair.key) { result[key] = pair.value }
+            }
+
+        // Nothing worth restoring — don't churn a save for an empty payload.
+        guard !cloudSeen.isEmpty || !cloudWatchlist.isEmpty || !cloudDiary.isEmpty else { return }
+
+        batchUpdate {
+            seenTmdbIds = cloudSeen
+            watchlist = cloudWatchlist
+            ratings = cloudRatings
+            diary = cloudDiary.sorted { $0.watchedDate > $1.watchedDate }
+            favoritePosterOverrides = cloudOverrides
+            for entry in cloudCache { movieCache[entry.id] = entry }
+        }
+    }
+
+    /// Firestore returns numbers as `Double`, `Int` or `NSNumber` depending on
+    /// how they were written; keys are stringified tmdbIds.
+    private static func decodeRatings(_ raw: [String: Any]) -> [Int: Double] {
+        raw.reduce(into: [Int: Double]()) { result, pair in
+            guard let key = Int(pair.key) else { return }
+            if let value = pair.value as? Double {
+                result[key] = value
+            } else if let value = pair.value as? Int {
+                result[key] = Double(value)
+            } else if let value = pair.value as? NSNumber {
+                result[key] = value.doubleValue
+            }
+        }
+    }
+
     private func load() {
         seenTmdbIds = Set(UserDefaults.standard.array(forKey: seenKey) as? [Int] ?? [])
         watchlist = Set(UserDefaults.standard.array(forKey: watchlistKey) as? [Int] ?? [])
@@ -693,7 +826,8 @@ final class SeenMoviesService: ObservableObject {
         case favorites   // favorites.csv — up to 4 pinned movies (Letterboxd-style)
     }
 
-    func importLetterboxd(from url: URL) async -> Int {
+    @discardableResult
+    func importLetterboxd(from url: URL) async -> LetterboxdImportResult {
         isImporting = true
         defer { isImporting = false }
 
@@ -703,6 +837,8 @@ final class SeenMoviesService: ObservableObject {
         let didStartAccess = url.startAccessingSecurityScopedResource()
         defer { if didStartAccess { url.stopAccessingSecurityScopedResource() } }
 
+        let name = url.lastPathComponent
+
         do {
             let data = try Data(contentsOf: url)
             // Letterboxd exports UTF-8, but fall back rather than dropping the
@@ -710,12 +846,23 @@ final class SeenMoviesService: ObservableObject {
             guard let csvString = String(data: data, encoding: .utf8)
                     ?? String(data: data, encoding: .isoLatin1) else {
                 lastImportCount = 0
-                return 0
+                return LetterboxdImportResult(
+                    failureReason: "Couldn't read the text in \(name). Re-export it from Letterboxd and try again."
+                )
             }
 
-            let filename = url.lastPathComponent.lowercased()
+            let filename = name.lowercased()
             let (kind, entries) = parseLetterboxdCSV(csvString, filename: filename)
+
+            guard !entries.isEmpty else {
+                lastImportCount = 0
+                return LetterboxdImportResult(
+                    failureReason: "\(name) had no film rows we recognised. Letterboxd's exports have a Name column — pick watched.csv, diary.csv, ratings.csv or watchlist.csv."
+                )
+            }
+
             var matchedCount = 0
+            var unmatchedTitles: [String] = []
             // For favorites.csv, accumulate IDs in CSV order so the final write
             // matches the user's Letterboxd ordering.
             var favoriteMatches: [(index: Int, tmdbId: Int)] = []
@@ -732,7 +879,17 @@ final class SeenMoviesService: ObservableObject {
                     for item in batch {
                         group.addTask {
                             do {
-                                let response = try await TMDBService.shared.searchMovies(query: item.entry.name, page: 1)
+                                // One retry: a rate limit or a dropped connection
+                                // mid-import is otherwise indistinguishable from
+                                // "no confident match", and quietly loses a film
+                                // from the seen set for good.
+                                let response: TMDBMovieListResponse
+                                do {
+                                    response = try await TMDBService.shared.searchMovies(query: item.entry.name, page: 1)
+                                } catch {
+                                    try await Task.sleep(for: .milliseconds(400))
+                                    response = try await TMDBService.shared.searchMovies(query: item.entry.name, page: 1)
+                                }
                                 let match = Self.bestLetterboxdMatch(for: item.entry, in: response.results)
                                 return (item.index, item.entry, match)
                             } catch {
@@ -742,7 +899,10 @@ final class SeenMoviesService: ObservableObject {
                     }
 
                     for await (index, entry, tmdbMovie) in group {
-                        guard let tmdbMovie else { continue }
+                        guard let tmdbMovie else {
+                            unmatchedTitles.append(entry.name)
+                            continue
+                        }
                         matchedCount += 1
                         // Derive year from release date so we don't overwrite a good
                         // value with nil if the CSV omitted it.
@@ -802,10 +962,14 @@ final class SeenMoviesService: ObservableObject {
                 }
             }
 
-            return matchedCount
+            return LetterboxdImportResult(matched: matchedCount, unmatchedTitles: unmatchedTitles)
         } catch {
             lastImportCount = 0
-            return 0
+            // Most often an iCloud Drive file that hasn't been downloaded to
+            // the device yet, or a security-scoped URL the picker didn't grant.
+            return LetterboxdImportResult(
+                failureReason: "Couldn't open \(name). If it's in iCloud Drive, open it in Files once to download it, then import again."
+            )
         }
     }
 
@@ -894,40 +1058,71 @@ final class SeenMoviesService: ObservableObject {
             }
 
             // Diary entries:
-            //   - `watched.csv` usually has no dates → skip diary creation (film already in seenTmdbIds).
-            //   - `diary.csv` / `reviews.csv` may have watched date and/or review → create an entry.
-            //   - Each Letterboxd diary row IS an event, so rewatches create separate entries.
+            //   - `watched.csv` / `ratings.csv` carry a "Date" column, but it's
+            //     the date the film was *added* to Letterboxd, not a watch
+            //     date. Building diary rows from it invents watch history and
+            //     collides with the real dates in diary.csv, so skip it — the
+            //     film is already in `seenTmdbIds` with its rating.
+            //   - `diary.csv` / `reviews.csv` carry a real "Watched Date".
+            //   - Each Letterboxd diary row IS an event, so rewatches on
+            //     different days still get their own entries.
+            guard kind == .diary || kind == .reviews else { return }
+
             let dateStr = entry.watchedDate ?? entry.entryDate
             let parsedDate = dateStr.flatMap { parseLetterboxdDate($0) }
             let hasReview = (entry.reviewText?.isEmpty == false)
-            let hasDate = parsedDate != nil
+            guard parsedDate != nil || hasReview else { return }
 
-            if hasDate || hasReview {
-                let date = parsedDate ?? Date()
-                // Dedupe by (tmdbId, day, reviewText) so re-importing the same CSV is idempotent
-                // but a legitimate rewatch on a different day still creates a new entry.
-                let duplicate = diary.contains { existing in
-                    existing.tmdbId == tmdbId &&
-                    Calendar.current.isDate(existing.watchedDate, inSameDayAs: date) &&
-                    existing.reviewText == entry.reviewText
+            let date = parsedDate ?? Date()
+            let starRating: Double? = entry.rating.map {
+                max(0.5, min(5.0, ($0 * 2).rounded() / 2))
+            }
+
+            // Upsert rather than append-unless-identical. The old dedupe keyed
+            // on reviewText too, so the *same viewing* arriving from a second
+            // source — diary.csv has no Review column, reviews.csv does, and
+            // the RSS sync extracts it from HTML — never matched and produced a
+            // duplicate row per film. Identity is the viewing, not its text:
+            //   1. a row already tagged with this Letterboxd URI,
+            //   2. otherwise any entry for this film on this day,
+            //   3. otherwise a new entry.
+            var index = entry.uri.flatMap { uri in
+                diary.firstIndex { $0.externalId == uri }
+            }
+            if index == nil {
+                index = diary.firstIndex {
+                    $0.tmdbId == tmdbId &&
+                    Calendar.current.isDate($0.watchedDate, inSameDayAs: date)
                 }
-                if !duplicate {
-                    // Preserve Letterboxd's half-star resolution.
-                    let starRating: Double? = entry.rating.map {
-                        max(0.5, min(5.0, ($0 * 2).rounded() / 2))
-                    }
-                    let newEntry = DiaryEntry(
-                        tmdbId: tmdbId,
-                        watchedDate: date,
-                        rating: starRating.map { Int($0.rounded()) }, // keep legacy field in sync
-                        ratingStars: starRating,
-                        reviewText: entry.reviewText,
-                        title: tmdbMovie.title,
-                        posterPath: tmdbMovie.posterPath,
-                        isRewatch: entry.isRewatch
-                    )
-                    diary.append(newEntry)
+            }
+
+            if let index {
+                diary[index].watchedDate = date
+                diary[index].isRewatch = entry.isRewatch
+                if let starRating {
+                    diary[index].ratingStars = starRating
+                    diary[index].rating = Int(starRating.rounded())
                 }
+                // Only ever add text, never blank out a review we already hold
+                // — diary.csv has no Review column and would otherwise wipe the
+                // body that reviews.csv or the RSS sync brought in.
+                if hasReview { diary[index].reviewText = entry.reviewText }
+                if diary[index].posterPath == nil { diary[index].posterPath = tmdbMovie.posterPath }
+                if let uri = entry.uri, diary[index].externalId == nil {
+                    diary[index].externalId = uri
+                }
+            } else {
+                diary.append(DiaryEntry(
+                    tmdbId: tmdbId,
+                    watchedDate: date,
+                    rating: starRating.map { Int($0.rounded()) }, // keep legacy field in sync
+                    ratingStars: starRating,
+                    reviewText: entry.reviewText,
+                    title: tmdbMovie.title,
+                    posterPath: tmdbMovie.posterPath,
+                    isRewatch: entry.isRewatch,
+                    externalId: entry.uri
+                ))
             }
         }
     }
@@ -942,6 +1137,10 @@ final class SeenMoviesService: ObservableObject {
         let reviewText: String?
         let entryDate: String?  // fallback from "Date" column on diary.csv
         let isRewatch: Bool
+        /// The row's "Letterboxd URI". On diary.csv / reviews.csv this is the
+        /// permalink for that specific viewing, which gives a re-import stable
+        /// identity so it updates rows instead of duplicating them.
+        let uri: String?
     }
 
     /// Parse a Letterboxd CSV. Detects whether it's a watchlist / watched / diary / reviews
@@ -979,6 +1178,7 @@ final class SeenMoviesService: ObservableObject {
         let dateIndex = headers.firstIndex(of: "date")
         let reviewIndex = headers.firstIndex(of: "review")
         let rewatchIndex = headers.firstIndex(of: "rewatch")
+        let uriIndex = headers.firstIndex(of: "letterboxd uri")
 
         guard let nameIdx = nameIndex else { return (kind, []) }
 
@@ -1012,10 +1212,16 @@ final class SeenMoviesService: ObservableObject {
                 return value == "yes" || value == "true" || value == "1"
             } ?? false
 
+            let uri: String? = uriIndex.flatMap { idx -> String? in
+                guard idx < fields.count else { return nil }
+                let trimmed = fields[idx].trimmingCharacters(in: .whitespaces)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+
             entries.append(LetterboxdEntry(
                 name: name, year: year, rating: rating,
                 watchedDate: watchedDate, reviewText: reviewText,
-                entryDate: entryDate, isRewatch: isRewatch
+                entryDate: entryDate, isRewatch: isRewatch, uri: uri
             ))
         }
 
@@ -1024,11 +1230,18 @@ final class SeenMoviesService: ObservableObject {
 
     /// RFC 4180 CSV tokenizer.
     ///
-    /// Handles the three things Letterboxd exports actually contain and the old
+    /// Handles the four things Letterboxd exports actually contain and the old
     /// line-splitting parser got wrong:
     ///   - commas inside quoted fields,
     ///   - `""` as an escaped quote inside a quoted field,
-    ///   - hard line breaks inside a quoted review body.
+    ///   - hard line breaks inside a quoted review body,
+    ///   - CRLF record separators, which Letterboxd writes on every row.
+    ///
+    /// Walks Unicode *scalars* rather than `Character`s deliberately. Swift
+    /// treats CRLF as a single extended grapheme cluster, so a `Character` loop
+    /// compares it against neither "\r" nor "\n", falls through to the default
+    /// branch, and appends it to the field instead of ending the record — the
+    /// whole export collapses into one row and every import matches nothing.
     ///
     /// Returns one array of fields per record.
     nonisolated static func parseCSV(_ text: String) -> [[String]] {
@@ -1037,7 +1250,7 @@ final class SeenMoviesService: ObservableObject {
         var current = ""
         var inQuotes = false
 
-        let characters = Array(text)
+        let scalars = Array(text.unicodeScalars)
         var index = 0
 
         func endField() {
@@ -1054,26 +1267,33 @@ final class SeenMoviesService: ObservableObject {
             fields = []
         }
 
-        while index < characters.count {
-            let character = characters[index]
+        while index < scalars.count {
+            let scalar = scalars[index]
 
             if inQuotes {
-                if character == "\"" {
+                if scalar == "\"" {
                     // `""` is an escaped quote; a lone `"` closes the field.
-                    if index + 1 < characters.count, characters[index + 1] == "\"" {
-                        current.append("\"")
+                    if index + 1 < scalars.count, scalars[index + 1] == "\"" {
+                        current.unicodeScalars.append("\"")
                         index += 2
                         continue
                     }
                     inQuotes = false
+                } else if scalar == "\r" {
+                    // Normalise line breaks inside a review body to plain \n so
+                    // the stored text doesn't carry stray carriage returns.
+                    current.unicodeScalars.append("\n")
+                    if index + 1 < scalars.count, scalars[index + 1] == "\n" {
+                        index += 1
+                    }
                 } else {
-                    current.append(character)
+                    current.unicodeScalars.append(scalar)
                 }
                 index += 1
                 continue
             }
 
-            switch character {
+            switch scalar {
             case "\"":
                 inQuotes = true
             case ",":
@@ -1083,11 +1303,11 @@ final class SeenMoviesService: ObservableObject {
             case "\r":
                 endRow()
                 // Swallow the \n of a \r\n pair so it doesn't open a blank row.
-                if index + 1 < characters.count, characters[index + 1] == "\n" {
+                if index + 1 < scalars.count, scalars[index + 1] == "\n" {
                     index += 1
                 }
             default:
-                current.append(character)
+                current.unicodeScalars.append(scalar)
             }
 
             index += 1

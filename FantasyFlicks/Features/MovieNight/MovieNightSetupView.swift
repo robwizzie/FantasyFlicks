@@ -355,6 +355,13 @@ struct FlowChips: View {
 }
 
 /// Minimal wrapping layout — chips flow onto as many lines as they need.
+///
+/// A subview wider than the container is clamped to the container rather than
+/// allowed to run past its edge. Chips size themselves from their text, so one
+/// long label (a list of every selected genre, a row of provider names) would
+/// otherwise be placed at its full intrinsic width and visibly bleed out of the
+/// card. Clamping hands it a narrower proposal instead, so its `lineLimit(1)`
+/// text truncates and the capsule stays inside.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
@@ -365,7 +372,7 @@ struct FlowLayout: Layout {
         var totalHeight: CGFloat = 0
 
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let size = Self.clampedSize(of: subview, toWidth: maxWidth)
             if rowWidth > 0, rowWidth + spacing + size.width > maxWidth {
                 totalHeight += rowHeight + spacing
                 rowWidth = size.width
@@ -388,7 +395,7 @@ struct FlowLayout: Layout {
         var rowHeight: CGFloat = 0
 
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let size = Self.clampedSize(of: subview, toWidth: bounds.width)
             if x > bounds.minX, x + size.width > bounds.maxX {
                 x = bounds.minX
                 y += rowHeight + spacing
@@ -398,5 +405,14 @@ struct FlowLayout: Layout {
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
         }
+    }
+
+    /// A subview's natural size, narrowed to the container when it doesn't fit.
+    /// Height is re-measured at the clamped width so a wrapped label still gets
+    /// the room it needs.
+    private static func clampedSize(of subview: LayoutSubview, toWidth limit: CGFloat) -> CGSize {
+        let natural = subview.sizeThatFits(.unspecified)
+        guard natural.width > limit else { return natural }
+        return subview.sizeThatFits(ProposedViewSize(width: limit, height: nil))
     }
 }

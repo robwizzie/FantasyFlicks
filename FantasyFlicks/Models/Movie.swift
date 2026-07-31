@@ -119,7 +119,9 @@ struct FFMovie: Codable, Identifiable, Hashable, Sendable {
         return URL(string: "https://www.youtube.com/watch?v=\(key)")
     }
 
-    var year: Int? {
+    /// `nonisolated` so background work (e.g. taste-fact extraction) can read
+    /// it off the main actor — the whole target defaults to `@MainActor`.
+    nonisolated var year: Int? {
         guard let date = releaseDate else { return nil }
         return Calendar.current.component(.year, from: date)
     }

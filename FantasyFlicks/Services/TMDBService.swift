@@ -241,15 +241,45 @@ final class TMDBService {
     /// workable *before* they invite anyone — the difference between "1,240
     /// movies match" and "3 movies match" is the difference between a good
     /// Movie Night and a dead one.
-    func matchCount(for filters: MovieNightFilters) async -> Int? {
+    func matchCount(for filters: MovieNightFilters, excluding excluded: Set<Int> = []) async -> Int? {
         guard let url = TMDBEndpoint.discoverMovieNight(
             filters: filters,
             source: .popular,
             page: 1
         ).url() else { return nil }
 
-        let response: TMDBMovieListResponse? = try? await networkManager.get(url: url)
-        return response?.totalResults
+        guard let response: TMDBMovieListResponse = try? await networkManager.get(url: url) else {
+            return nil
+        }
+        guard !excluded.isEmpty, response.totalResults > 0 else { return response.totalResults }
+
+        // TMDB can't exclude arbitrary ids, so the count it reports ignores
+        // everything the host has filtered out locally — seen films, past
+        // decks, the watchlist. Quoting it raw told a heavy watcher that two
+        // thousand films were available right before handing them an empty
+        // deck. Instead, sample how much of the result set is actually
+        // excluded and scale.
+        //
+        // Sampled from the middle and end as well as the front: exclusions
+        // cluster hard at the top of a popularity sort, so measuring page 1
+        // alone would understate what's available by a wide margin.
+        var sampled: [TMDBMovie] = response.results
+        let totalPages = min(response.totalPages, 500)
+        if totalPages > 2 {
+            for page in [max(2, totalPages / 2), totalPages] {
+                guard let pageURL = TMDBEndpoint.discoverMovieNight(
+                    filters: filters, source: .popular, page: page
+                ).url() else { continue }
+                if let extra: TMDBMovieListResponse = try? await networkManager.get(url: pageURL) {
+                    sampled += extra.results
+                }
+            }
+        }
+
+        guard !sampled.isEmpty else { return response.totalResults }
+        let availableInSample = sampled.filter { !excluded.contains($0.id) }.count
+        let availableRate = Double(availableInSample) / Double(sampled.count)
+        return Int((Double(response.totalResults) * availableRate).rounded())
     }
 
     /// Safely fetch a page, returning empty results on failure instead of throwing
@@ -296,52 +326,93 @@ final class TMDBService {
             }
         }
 
-        // 1. Popular within the filters — the primary source. Let this one
-        //    throw so a real failure surfaces instead of "no movies found".
+        // Total discover requests one build may spend, across all sources.
+        var requestsRemaining = 16
+
+        /// Pull from one source until the pool is big enough or the budget runs out.
+        ///
+        /// Pages are sampled across the result range rather than read straight
+        /// from the front. Reading sequentially from page 1 was the reason a
+        /// heavy watcher could get an empty deck out of a filter set matching
+        /// two thousand films: `popularity.desc` and `vote_average.desc` put
+        /// exactly the films they've already seen on the first few pages, and
+        /// the old code never looked past page 4. Everything it fetched was
+        /// excluded, so the pool came back empty and the host was told nothing
+        /// matched — while 1,800 unwatched films sat deeper in the same query.
+        ///
+        /// Near pages are still drawn first, so a normal deck keeps recognisable
+        /// films; the deep range only gets touched when the near range didn't
+        /// yield enough. Randomising within each band also means two sessions
+        /// with identical filters don't produce the same deck.
+        func harvest(_ source: MovieNightDeckSource, poolTarget: Int, maxRequests: Int) async {
+            guard requestsRemaining > 0 else { return }
+
+            let first = await safeFetch {
+                try await self.discoverForMovieNight(filters: filters, source: source, page: 1)
+            }
+            absorb(first.results)
+            requestsRemaining -= 1
+            guard first.totalPages > 1 else { return }
+
+            // TMDB refuses page numbers above 500.
+            let deepest = min(first.totalPages, 500)
+            let nearEnd = min(deepest, 30)
+            var pages = Array(2...max(2, nearEnd)).shuffled()
+            if deepest > nearEnd {
+                pages += Array((nearEnd + 1)...deepest).shuffled()
+            }
+
+            var spent = 1
+            while pool.count < poolTarget,
+                  spent < maxRequests,
+                  requestsRemaining > 0,
+                  !pages.isEmpty {
+                let page = pages.removeFirst()
+                let response = await safeFetch {
+                    try await self.discoverForMovieNight(filters: filters, source: source, page: page)
+                }
+                absorb(response.results)
+                spent += 1
+                requestsRemaining -= 1
+            }
+        }
+
+        // 1. Popular within the filters — the primary source. Page 1 goes
+        //    through `discoverForMovieNight` directly so a genuine network or
+        //    auth failure still throws rather than looking like an empty result.
         let firstPage = try await discoverForMovieNight(filters: filters, source: .popular, page: 1)
         absorb(firstPage.results)
+        requestsRemaining -= 1
 
-        for page in 2...4 {
-            if pool.count >= targetSize * 2 { break }
-            if firstPage.totalPages < page { break }
-            let response = await safeFetch {
-                try await self.discoverForMovieNight(filters: filters, source: .popular, page: page)
+        if firstPage.totalPages > 1, pool.count < targetSize * 3 {
+            let deepest = min(firstPage.totalPages, 500)
+            let nearEnd = min(deepest, 30)
+            var pages = Array(2...max(2, nearEnd)).shuffled()
+            if deepest > nearEnd {
+                pages += Array((nearEnd + 1)...deepest).shuffled()
             }
-            absorb(response.results)
+            var spent = 1
+            while pool.count < targetSize * 3, spent < 7, requestsRemaining > 0, !pages.isEmpty {
+                let page = pages.removeFirst()
+                let response = await safeFetch {
+                    try await self.discoverForMovieNight(filters: filters, source: .popular, page: page)
+                }
+                absorb(response.results)
+                spent += 1
+                requestsRemaining -= 1
+            }
         }
 
         // 2. Highest rated within the same filters, for depth past the front page.
-        for page in 1...3 {
-            if pool.count >= targetSize * 3 { break }
-            let response = await safeFetch {
-                try await self.discoverForMovieNight(filters: filters, source: .acclaimed, page: page)
-            }
-            absorb(response.results)
-            if response.totalPages <= page { break }
-        }
+        await harvest(.acclaimed, poolTarget: targetSize * 4, maxRequests: 5)
 
         // 3. Optional sources. Both are discover queries with a date window, so
         //    they inherit every filter the host set.
         if filters.includeTrending {
-            for page in 1...2 {
-                if pool.count >= targetSize * 3 { break }
-                let response = await safeFetch {
-                    try await self.discoverForMovieNight(filters: filters, source: .recent, page: page)
-                }
-                absorb(response.results)
-                if response.totalPages <= page { break }
-            }
+            await harvest(.recent, poolTarget: targetSize * 4, maxRequests: 3)
         }
-
         if filters.includeNowPlaying {
-            for page in 1...2 {
-                if pool.count >= targetSize * 3 { break }
-                let response = await safeFetch {
-                    try await self.discoverForMovieNight(filters: filters, source: .inTheaters, page: page)
-                }
-                absorb(response.results)
-                if response.totalPages <= page { break }
-            }
+            await harvest(.inTheaters, poolTarget: targetSize * 4, maxRequests: 2)
         }
 
         // Shuffle for variety, then trim to deck size.

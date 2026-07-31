@@ -453,7 +453,10 @@ final class LetterboxdService: ObservableObject {
 ///
 /// Namespace processing stays off, so element names arrive qualified
 /// (`letterboxd:memberRating`, `tmdb:movieId`) and we can match them directly.
-private final class LetterboxdFeedParser: NSObject, XMLParserDelegate {
+/// `nonisolated` so `parse` really runs off the main actor — the target
+/// defaults to `@MainActor`, which would otherwise bounce the whole parse
+/// back to the main thread from the detached task that calls it.
+private nonisolated final class LetterboxdFeedParser: NSObject, XMLParserDelegate {
 
     private var entries: [LetterboxdFeedEntry] = []
 
@@ -640,7 +643,11 @@ private final class LetterboxdFeedParser: NSObject, XMLParserDelegate {
 
 private extension String {
     /// Decode the handful of HTML entities that show up in Letterboxd reviews.
-    var decodingHTMLEntities: String {
+    ///
+    /// Explicitly `nonisolated` — the target defaults declarations to
+    /// `@MainActor`, and the feed parser calls this from the detached task that
+    /// keeps XML parsing off the main thread.
+    nonisolated var decodingHTMLEntities: String {
         var result = self
 
         // Numeric entities first (&#8217; &#x2019;), then named ones. `&amp;`
@@ -672,7 +679,7 @@ private extension String {
 
     /// Cheap, stable fingerprint (FNV-1a) for change detection. Not
     /// cryptographic — it only needs to differ when the text differs.
-    var stableFingerprint: String {
+    nonisolated var stableFingerprint: String {
         var hash: UInt64 = 14_695_981_039_346_656_037 // FNV-1a offset basis
         for byte in self.utf8 {
             hash ^= UInt64(byte)

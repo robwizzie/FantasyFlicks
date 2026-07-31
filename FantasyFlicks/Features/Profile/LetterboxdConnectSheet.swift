@@ -21,7 +21,7 @@ struct LetterboxdConnectSheet: View {
     @State private var showCSVImporter = false
     @State private var showDisconnectConfirm = false
     @State private var justSyncedCount: Int?
-    @State private var csvImportTotal: Int?
+    @State private var csvImportResult: LetterboxdImportResult?
 
     @FocusState private var usernameFieldFocused: Bool
 
@@ -66,14 +66,14 @@ struct LetterboxdConnectSheet: View {
                 Task {
                     // Report the total across the whole selection — the service's
                     // own counter only remembers the last file processed.
-                    var total = 0
+                    var total = LetterboxdImportResult()
                     for url in urls {
-                        total += await seenService.importLetterboxd(from: url)
+                        total = total + (await seenService.importLetterboxd(from: url))
                     }
-                    withAnimation(FFAnimations.smooth) { csvImportTotal = total }
+                    withAnimation(FFAnimations.smooth) { csvImportResult = total }
                     // A backfill usually moves the ratings set a lot, so the
                     // taste profile is stale the moment this finishes.
-                    if total > 0 { await RecommendationEngine.shared.rebuild() }
+                    if total.isSuccess { await RecommendationEngine.shared.rebuild() }
                 }
             }
             .alert("Disconnect Letterboxd?", isPresented: $showDisconnectConfirm) {
@@ -297,15 +297,29 @@ struct LetterboxdConnectSheet: View {
                 }
                 .disabled(seenService.isImporting)
 
-                if let count = csvImportTotal {
-                    Label(
-                        count > 0
-                            ? "Imported \(count) \(count == 1 ? "movie" : "movies")"
-                            : "Nothing we could match in that file",
-                        systemImage: count > 0 ? "checkmark.circle.fill" : "info.circle"
-                    )
-                    .font(FFTypography.labelMedium)
-                    .foregroundColor(count > 0 ? FFColors.success : FFColors.textSecondary)
+                if let csvImportResult {
+                    VStack(alignment: .leading, spacing: FFSpacing.sm) {
+                        Label(
+                            csvImportResult.summary,
+                            systemImage: csvImportResult.isSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                        )
+                        .font(FFTypography.labelMedium)
+                        .foregroundColor(csvImportResult.isSuccess ? FFColors.success : FFColors.ruby)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                        // Name the films we skipped so a bad match is fixable by
+                        // hand instead of silently missing from Movie Night.
+                        // Mostly TV — Letterboxd lets you log limited series,
+                        // and we only ever search TMDB's movie catalogue.
+                        let skipped = csvImportResult.distinctUnmatchedTitles
+                        if !skipped.isEmpty {
+                            Text(skipped.prefix(8).joined(separator: ", ")
+                                 + (skipped.count > 8 ? " and \(skipped.count - 8) more" : ""))
+                                .font(FFTypography.caption)
+                                .foregroundColor(FFColors.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
 
                 Button {

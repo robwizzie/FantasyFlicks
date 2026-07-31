@@ -244,10 +244,17 @@ struct MovieNightWhereSection: View {
             }
         } label: {
             HStack(spacing: FFSpacing.md) {
-                Image(systemName: provider.iconName)
-                    .font(.system(size: 20))
-                    .foregroundColor(isSelected ? FFColors.backgroundDark : Color(hex: provider.color))
-                    .frame(width: 30)
+                // The service's real logo, with the SF Symbol standing in only
+                // while it loads or if it can't be fetched.
+                CachedAsyncImage(url: provider.logoURL) { image in
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    Image(systemName: provider.iconName)
+                        .font(.system(size: 20))
+                        .foregroundColor(isSelected ? FFColors.backgroundDark : Color(hex: provider.color))
+                }
+                .frame(width: 30, height: 30)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
 
                 Text(provider.name)
                     .font(FFTypography.labelMedium)
@@ -533,6 +540,26 @@ struct MovieNightWatchedSection: View {
                 .font(FFTypography.caption)
                 .foregroundColor(FFColors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Divider().background(Color.white.opacity(0.1))
+
+            Toggle(isOn: $filters.excludePastDeckMovies) {
+                MovieNightToggleLabel(
+                    icon: "clock.arrow.circlepath",
+                    title: "No Repeats",
+                    subtitle: "Skip anything a past Movie Night already put in front of you, watched or not."
+                )
+            }
+            .tint(FFColors.goldPrimary)
+
+            Toggle(isOn: $filters.excludeWatchlist) {
+                MovieNightToggleLabel(
+                    icon: "bookmark.slash.fill",
+                    title: "Skip My Watchlist",
+                    subtitle: "\(seenService.watchlist.count) saved. Leave off to keep them in play — most people want their watchlist to show up."
+                )
+            }
+            .tint(FFColors.goldPrimary)
         }
     }
 }
@@ -580,6 +607,9 @@ struct MovieNightMatchCountBar: View {
     let filters: MovieNightFilters
 
     @State private var matchCount: Int?
+    /// True when seen/past-deck/watchlist filtering trimmed the number, so the
+    /// wording can say "available to you" rather than implying a raw match.
+    @State private var hasExclusions = false
     @State private var isCounting = false
     @State private var countTask: Task<Void, Never>?
 
@@ -614,17 +644,25 @@ struct MovieNightMatchCountBar: View {
         return Self.quality(count: matchCount, deckSize: filters.deckSize)
     }
 
+    /// "available to you" once anything has been filtered out locally, since
+    /// the number no longer matches what TMDB would report.
+    private var noun: String {
+        hasExclusions ? "movies available to you" : "movies match your filters"
+    }
+
     private var message: String {
         guard let matchCount else { return "" }
         switch quality {
         case .tooFew:
             return matchCount == 0
-                ? "No movies match these filters — try loosening one"
-                : "Only \(matchCount) movies match — your deck will be short"
+                ? (hasExclusions
+                   ? "Nothing left after what you've seen — loosen a filter or allow repeats"
+                   : "No movies match these filters — try loosening one")
+                : "Only \(matchCount) \(noun) — your deck will be short"
         case .thin:
-            return "\(matchCount) movies match — a bit tight, but workable"
+            return "\(matchCount) \(noun) — a bit tight, but workable"
         case .plenty:
-            return "\(matchCount.formatted()) movies match your filters"
+            return "\(matchCount.formatted()) \(noun)"
         }
     }
 
@@ -655,8 +693,11 @@ struct MovieNightMatchCountBar: View {
             try? await Task.sleep(for: .milliseconds(450))
             guard !Task.isCancelled else { return }
             isCounting = true
-            let count = await TMDBService.shared.matchCount(for: filters)
+            // Count what the host can actually be dealt, not TMDB's raw total.
+            let excluded = await MovieNightService.shared.localExclusions(for: filters)
+            let count = await TMDBService.shared.matchCount(for: filters, excluding: excluded)
             guard !Task.isCancelled else { return }
+            hasExclusions = !excluded.isEmpty
             matchCount = count
             isCounting = false
         }

@@ -207,16 +207,17 @@ final class MovieNightViewModel: ObservableObject {
             let filters = session.filters
             // Always read the live seen set from the service — the ViewModel's
             // local copy can be stale after a Letterboxd import or settings change.
-            let liveSeenIds = SeenMoviesService.shared.seenTmdbIds
-            let excludeIds: Set<Int>
-            switch filters.excludeSeenMode {
-            case .none:
-                excludeIds = []
-            case .mineOnly:
-                excludeIds = liveSeenIds
-            case .everyoneInParty:
-                // Union of ALL participants' seen lists (uploaded on join)
-                excludeIds = session.allParticipantsSeenIds.union(liveSeenIds)
+            // Seen films, past decks and the watchlist, per the host's settings.
+            // Shared with the setup screen's match count so the two agree.
+            var excludeIds = await movieNightService.localExclusions(
+                for: filters,
+                excludingSession: session.id
+            )
+
+            // Party-wide exclusion needs the session, so it isn't part of the
+            // shared helper — everyone's seen lists are uploaded on join.
+            if filters.excludeSeenMode == .everyoneInParty {
+                excludeIds.formUnion(session.allParticipantsSeenIds)
             }
 
             let movies = try await tmdbService.buildMovieNightDeck(filters: filters, excludeTmdbIds: excludeIds)
@@ -237,6 +238,7 @@ final class MovieNightViewModel: ObservableObject {
 
             // Set deck BEFORE writing to Firestore so listener doesn't trigger loadDeckMovies
             deckMovies = movies
+            prefetchPosters(for: movies)
             let tmdbIds = movies.map { $0.tmdbId }
 
             // Write deck to Firestore and transition status
@@ -522,6 +524,7 @@ final class MovieNightViewModel: ObservableObject {
                 ?? SeenMoviesService.shared.cachedMovie(for: tmdbId)?.toFFMovie()
                 ?? FFMovie(tmdbId: tmdbId, title: "Unavailable", overview: "")
         }
+        prefetchPosters(for: deckMovies)
         await fetchProviders(for: deckMovies)
 
         // Restore current card index from existing swipes
@@ -537,6 +540,20 @@ final class MovieNightViewModel: ObservableObject {
 
         isLoading = false
         isDeckLoading = false
+    }
+
+    /// Warm the poster cache for the whole deck up front.
+    ///
+    /// Cards render straight from `ImageCache`'s memory cache when it already
+    /// holds the image, so pulling every poster in before swiping starts means
+    /// a card is never waiting on a download at the moment it slides forward.
+    /// Fire-and-forget — the deck is usable without it.
+    private func prefetchPosters(for movies: [FFMovie]) {
+        let urls = movies.compactMap { $0.posterURLHighRes ?? $0.posterURL }
+        guard !urls.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            await ImageCache.shared.prefetch(urls: urls)
+        }
     }
 
     private func fetchProviders(for movies: [FFMovie]) async {
@@ -608,6 +625,15 @@ final class MovieNightViewModel: ObservableObject {
         }
         if filters.audienceMode == .hiddenGems {
             suspects.append("switching familiarity off Deep Cuts")
+        }
+        if filters.excludePastDeckMovies {
+            suspects.append("allowing repeats from past Movie Nights")
+        }
+        if filters.excludeWatchlist {
+            suspects.append("letting your watchlist back in")
+        }
+        if filters.excludeSeenMode != .none {
+            suspects.append("including films you've already seen")
         }
         if filters.minVoteAverage >= 7.0 {
             suspects.append("lowering the minimum rating")

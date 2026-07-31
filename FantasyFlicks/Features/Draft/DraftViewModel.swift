@@ -274,7 +274,7 @@ final class DraftViewModel: ObservableObject {
 
             // Calculate next state including updated pick count
             let currentPickCount = draft.picks.count
-            var nextState = calculateNextDraftState(draft: draft, currentPickCount: currentPickCount)
+            let nextState = calculateNextDraftState(draft: draft, currentPickCount: currentPickCount)
             try await db.collection("drafts").document(draft.id).updateData(nextState)
 
             // Update user's total movies drafted

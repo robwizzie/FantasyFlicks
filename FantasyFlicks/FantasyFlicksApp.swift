@@ -82,11 +82,22 @@ struct FantasyFlicksApp: App {
             // and each time the app comes forward. The service throttles
             // itself, so quick app switches don't hammer the feed.
             .task {
+                // Covers the case where auth is already resolved by the time
+                // this runs; the onChange below catches the usual async path.
+                await SeenMoviesService.shared.restoreFromCloudIfEmpty()
                 await LetterboxdService.shared.syncIfDue()
             }
             .onChange(of: scenePhase) { _, newPhase in
                 guard newPhase == .active else { return }
                 Task { await LetterboxdService.shared.syncIfDue() }
+            }
+            // On a fresh install or a new device there's nothing stored locally,
+            // but the signed-in account's diary, ratings and watchlist are
+            // already in Firestore. Restore them before anything else writes.
+            // No-ops when this device already has data of its own.
+            .onChange(of: authService.currentUser?.id) { _, userId in
+                guard userId != nil else { return }
+                Task { await SeenMoviesService.shared.restoreFromCloudIfEmpty() }
             }
         }
     }
