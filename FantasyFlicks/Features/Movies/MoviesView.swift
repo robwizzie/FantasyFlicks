@@ -15,6 +15,7 @@ struct MoviesView: View {
     @State private var selectedMovie: FFMovie?
     @State private var selectedMode: BrowseMode = .collections
     @State private var showDiscover = false
+    @State private var showForYou = false
     @State private var showCreateList = false
     @State private var openListId: String?
 
@@ -52,6 +53,11 @@ struct MoviesView: View {
                         if !searchText.isEmpty {
                             searchResultsSection
                         } else {
+                            ForYouRow(
+                                onSelect: { selectedMovie = $0 },
+                                onSeeAll: { showForYou = true }
+                            )
+
                             modeSwitcher
 
                             switch selectedMode {
@@ -101,6 +107,9 @@ struct MoviesView: View {
             }
             .navigationDestination(isPresented: $showDiscover) {
                 DiscoverSwipeView()
+            }
+            .navigationDestination(isPresented: $showForYou) {
+                ForYouView()
             }
             .navigationDestination(isPresented: Binding(
                 get: { openListId != nil },

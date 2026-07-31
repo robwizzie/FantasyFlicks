@@ -99,6 +99,9 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
     var excludeSeenMode: ExcludeSeenMode
     var minimumYear: Int?
     var excludeShorts: Bool
+    /// When false (the default) the deck is limited to English-language films.
+    /// Turning it on opens up world cinema — Parasite, Spirited Away, Amélie.
+    var includeForeignLanguage: Bool
 
     static let `default` = MovieNightFilters(
         genreIds: [],
@@ -110,7 +113,8 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         deckSize: 25,
         excludeSeenMode: .mineOnly,
         minimumYear: nil,
-        excludeShorts: true
+        excludeShorts: true,
+        includeForeignLanguage: false
     )
 
     enum CodingKeys: String, CodingKey {
@@ -118,12 +122,14 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         case includeNowPlaying, includeTrending, deckSize
         case excludeSeenMovies // legacy boolean key
         case excludeSeenMode, minimumYear, excludeShorts
+        case includeForeignLanguage
     }
 
     init(genreIds: [Int], watchProviderIds: [Int], watchRegion: String,
          minVoteAverage: Double, includeNowPlaying: Bool, includeTrending: Bool,
          deckSize: Int, excludeSeenMode: ExcludeSeenMode = .mineOnly,
-         minimumYear: Int? = nil, excludeShorts: Bool = true) {
+         minimumYear: Int? = nil, excludeShorts: Bool = true,
+         includeForeignLanguage: Bool = false) {
         self.genreIds = genreIds
         self.watchProviderIds = watchProviderIds
         self.watchRegion = watchRegion
@@ -134,6 +140,7 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         self.excludeSeenMode = excludeSeenMode
         self.minimumYear = minimumYear
         self.excludeShorts = excludeShorts
+        self.includeForeignLanguage = includeForeignLanguage
     }
 
     init(from decoder: Decoder) throws {
@@ -147,6 +154,7 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         deckSize = try container.decode(Int.self, forKey: .deckSize)
         minimumYear = try container.decodeIfPresent(Int.self, forKey: .minimumYear)
         excludeShorts = try container.decodeIfPresent(Bool.self, forKey: .excludeShorts) ?? true
+        includeForeignLanguage = try container.decodeIfPresent(Bool.self, forKey: .includeForeignLanguage) ?? false
 
         // Backward compatibility: read new enum or fall back to old boolean
         if let mode = try? container.decode(ExcludeSeenMode.self, forKey: .excludeSeenMode) {
@@ -169,6 +177,7 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         try container.encode(excludeSeenMode, forKey: .excludeSeenMode)
         try container.encodeIfPresent(minimumYear, forKey: .minimumYear)
         try container.encode(excludeShorts, forKey: .excludeShorts)
+        try container.encode(includeForeignLanguage, forKey: .includeForeignLanguage)
     }
 }
 

@@ -342,6 +342,24 @@ struct MovieNightSetupView: View {
 
                         Divider().background(Color.white.opacity(0.1))
 
+                        Toggle(isOn: $filters.includeForeignLanguage) {
+                            HStack(spacing: FFSpacing.md) {
+                                Image(systemName: "globe")
+                                    .foregroundColor(FFColors.goldPrimary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Include World Cinema")
+                                        .font(FFTypography.labelLarge)
+                                        .foregroundColor(FFColors.textPrimary)
+                                    Text("Non-English films — expect subtitles")
+                                        .font(FFTypography.caption)
+                                        .foregroundColor(FFColors.textTertiary)
+                                }
+                            }
+                        }
+                        .tint(FFColors.goldPrimary)
+
+                        Divider().background(Color.white.opacity(0.1))
+
                         Toggle(isOn: $filters.includeTrending) {
                             HStack(spacing: FFSpacing.md) {
                                 Image(systemName: "flame.fill")
@@ -502,6 +520,22 @@ struct MovieNightSetupView: View {
                         Divider().background(Color.white.opacity(0.1))
 
                         reviewRow(
+                            icon: "globe",
+                            title: "Language",
+                            value: filters.includeForeignLanguage ? "English + world cinema" : "English only"
+                        )
+
+                        Divider().background(Color.white.opacity(0.1))
+
+                        reviewRow(
+                            icon: "sparkles",
+                            title: "Sources",
+                            value: sourcesSummary
+                        )
+
+                        Divider().background(Color.white.opacity(0.1))
+
+                        reviewRow(
                             icon: "square.stack.fill",
                             title: "Deck Size",
                             value: "\(filters.deckSize) movies"
@@ -511,6 +545,15 @@ struct MovieNightSetupView: View {
                 .padding(.horizontal)
             }
         }
+    }
+
+    /// Which extra sources feed the deck beyond the main catalogue search.
+    private var sourcesSummary: String {
+        var parts: [String] = ["Catalogue", "Classics"]
+        if filters.includeTrending { parts.append("Trending") }
+        if filters.includeNowPlaying { parts.append("In theaters") }
+        if filters.excludeShorts { parts.append("40 min+") }
+        return parts.joined(separator: " · ")
     }
 
     private func reviewRow(icon: String, title: String, value: String) -> some View {

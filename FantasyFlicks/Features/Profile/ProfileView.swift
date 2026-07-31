@@ -6,20 +6,20 @@
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 import PhotosUI
 
 struct ProfileView: View {
     @StateObject private var viewModel = ProfileViewModel()
     @StateObject private var seenMoviesService = SeenMoviesService.shared
     @StateObject private var friendsService = FriendsService.shared
+    @StateObject private var letterboxd = LetterboxdService.shared
     @State private var showSettings = false
     @State private var showEditProfile = false
     @State private var showWatchedMovies = false
     @State private var showDiary = false
     @State private var showWatchlist = false
     @State private var showRatings = false
-    @State private var showLetterboxdImporter = false
+    @State private var showLetterboxdConnect = false
     @State private var selectedAchievement: AchievementProgress?
     @State private var showFavoritesEditor = false
     @State private var favoriteDetail: FFMovie?
@@ -109,18 +109,8 @@ struct ProfileView: View {
                     MovieDetailView(movie: movie)
                 }
             }
-            .fileImporter(
-                isPresented: $showLetterboxdImporter,
-                allowedContentTypes: [.commaSeparatedText, .plainText],
-                allowsMultipleSelection: false
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    guard let url = urls.first else { return }
-                    Task { _ = await seenMoviesService.importLetterboxd(from: url) }
-                case .failure:
-                    break
-                }
+            .sheet(isPresented: $showLetterboxdConnect) {
+                LetterboxdConnectSheet()
             }
             .alert("Error", isPresented: .constant(viewModel.error != nil)) {
                 Button("OK") { viewModel.clearMessages() }
@@ -278,60 +268,65 @@ struct ProfileView: View {
         .padding(.horizontal)
     }
 
-    // MARK: - Letterboxd Import Section
+    // MARK: - Letterboxd Section
 
     private var letterboxdImportSection: some View {
         VStack(alignment: .leading, spacing: FFSpacing.md) {
-            Text("Import Data")
+            Text("Connected Accounts")
                 .font(FFTypography.headlineSmall)
                 .foregroundColor(FFColors.textPrimary)
                 .padding(.horizontal)
 
-            GlassCard(goldTint: false) {
-                VStack(alignment: .leading, spacing: FFSpacing.md) {
+            Button {
+                showLetterboxdConnect = true
+            } label: {
+                GlassCard(goldTint: letterboxd.isConnected) {
                     HStack(spacing: FFSpacing.md) {
-                        Image(systemName: "square.and.arrow.down.fill")
-                            .font(.system(size: 22))
-                            .foregroundColor(FFColors.goldPrimary)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: FFCornerRadius.medium)
+                                .fill((letterboxd.isConnected ? FFColors.success : FFColors.goldPrimary).opacity(0.15))
+                                .frame(width: 44, height: 44)
+                            Image(systemName: letterboxd.isConnected ? "checkmark.circle.fill" : "link")
+                                .font(.system(size: 20))
+                                .foregroundColor(letterboxd.isConnected ? FFColors.success : FFColors.goldPrimary)
+                        }
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Import from Letterboxd")
+                            Text("Letterboxd")
                                 .font(FFTypography.titleSmall)
                                 .foregroundColor(FFColors.textPrimary)
 
-                            Text("watched.csv · diary.csv · watchlist.csv · favorites.csv")
+                            Text(letterboxdSubtitle)
                                 .font(FFTypography.caption)
                                 .foregroundColor(FFColors.textTertiary)
+                                .lineLimit(1)
                         }
 
-                        Spacer()
-                    }
+                        Spacer(minLength: 0)
 
-                    GoldButton(
-                        title: seenMoviesService.isImporting ? "Importing..." : "Choose CSV File",
-                        icon: "doc.fill",
-                        style: .secondary,
-                        size: .medium,
-                        isLoading: seenMoviesService.isImporting,
-                        fullWidth: true
-                    ) {
-                        showLetterboxdImporter = true
-                    }
-                    .disabled(seenMoviesService.isImporting)
-
-                    if let count = seenMoviesService.lastImportCount, count > 0 {
-                        HStack(spacing: FFSpacing.sm) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(FFColors.success)
-                            Text("Imported \(count) movies")
-                                .font(FFTypography.labelMedium)
-                                .foregroundColor(FFColors.success)
+                        if letterboxd.isSyncing {
+                            InlineLoader(size: 16)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(FFColors.goldPrimary)
                         }
                     }
                 }
             }
+            .buttonStyle(.plain)
             .padding(.horizontal)
         }
+    }
+
+    private var letterboxdSubtitle: String {
+        guard let username = letterboxd.username else {
+            return "Sync your watches, ratings and reviews"
+        }
+        guard let date = letterboxd.lastSyncedAt else { return "@\(username) · not synced yet" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return "@\(username) · synced \(formatter.localizedString(for: date, relativeTo: Date()))"
     }
 
     private var recentActivitySection: some View {

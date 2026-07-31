@@ -106,14 +106,26 @@ enum TMDBEndpoint: Sendable {
     case configuration
     case trending(timeWindow: String, page: Int)
     case watchProviders(movieId: Int)
-    case discoverForMovieNight(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?)
-    case discoverClassics(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?)
+    case discoverForMovieNight(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?, englishOnly: Bool)
+    case discoverClassics(providerIds: [Int], region: String, genreIds: [Int], minVote: Double, page: Int, minimumYear: Int?, minimumRuntime: Int?, englishOnly: Bool)
     case movieRecommendations(id: Int, page: Int)
+    case movieSimilar(id: Int, page: Int)
     case movieImages(id: Int)
+    /// Personalised discovery for the recommendation engine — narrow by the
+    /// genres/people a user rates highly, with a quality floor.
+    case discoverByTaste(
+        genreIds: [Int],
+        peopleIds: [Int],
+        excludedGenreIds: [Int],
+        minVote: Double,
+        minVoteCount: Int,
+        minimumYear: Int?,
+        page: Int
+    )
 
     var path: String {
         switch self {
-        case .discover, .discoverUpcomingBlockbusters, .discoverForMovieNight, .discoverClassics: return "/discover/movie"
+        case .discover, .discoverUpcomingBlockbusters, .discoverForMovieNight, .discoverClassics, .discoverByTaste: return "/discover/movie"
         case .upcoming: return "/movie/upcoming"
         case .nowPlaying: return "/movie/now_playing"
         case .movieDetails(let id): return "/movie/\(id)"
@@ -126,6 +138,7 @@ enum TMDBEndpoint: Sendable {
         case .trending(let timeWindow, _): return "/trending/movie/\(timeWindow)"
         case .watchProviders(let movieId): return "/movie/\(movieId)/watch/providers"
         case .movieRecommendations(let id, _): return "/movie/\(id)/recommendations"
+        case .movieSimilar(let id, _): return "/movie/\(id)/similar"
         case .movieImages(let id): return "/movie/\(id)/images"
         }
     }
@@ -171,15 +184,17 @@ enum TMDBEndpoint: Sendable {
             ])
         case .trending(_, let page):
             items.append(URLQueryItem(name: "page", value: "\(page)"))
-        case .discoverForMovieNight(let providerIds, let region, let genreIds, let minVote, let page, let minimumYear, let minimumRuntime):
+        case .discoverForMovieNight(let providerIds, let region, let genreIds, let minVote, let page, let minimumYear, let minimumRuntime, let englishOnly):
             items.append(contentsOf: [
                 URLQueryItem(name: "page", value: "\(page)"),
                 URLQueryItem(name: "sort_by", value: "popularity.desc"),
                 URLQueryItem(name: "vote_average.gte", value: String(format: "%.1f", minVote)),
                 URLQueryItem(name: "vote_count.gte", value: "50"),
-                URLQueryItem(name: "with_original_language", value: "en"),
                 URLQueryItem(name: "include_adult", value: "false")
             ])
+            if englishOnly {
+                items.append(URLQueryItem(name: "with_original_language", value: "en"))
+            }
             if !providerIds.isEmpty {
                 items.append(URLQueryItem(name: "with_watch_providers", value: providerIds.map { "\($0)" }.joined(separator: "|")))
                 items.append(URLQueryItem(name: "watch_region", value: region))
@@ -194,15 +209,17 @@ enum TMDBEndpoint: Sendable {
             if let runtime = minimumRuntime {
                 items.append(URLQueryItem(name: "with_runtime.gte", value: "\(runtime)"))
             }
-        case .discoverClassics(let providerIds, let region, let genreIds, let minVote, let page, let minimumYear, let minimumRuntime):
+        case .discoverClassics(let providerIds, let region, let genreIds, let minVote, let page, let minimumYear, let minimumRuntime, let englishOnly):
             items.append(contentsOf: [
                 URLQueryItem(name: "page", value: "\(page)"),
                 URLQueryItem(name: "sort_by", value: "vote_average.desc"),
                 URLQueryItem(name: "vote_average.gte", value: String(format: "%.1f", minVote)),
                 URLQueryItem(name: "vote_count.gte", value: "300"),
-                URLQueryItem(name: "with_original_language", value: "en"),
                 URLQueryItem(name: "include_adult", value: "false")
             ])
+            if englishOnly {
+                items.append(URLQueryItem(name: "with_original_language", value: "en"))
+            }
             if !providerIds.isEmpty {
                 items.append(URLQueryItem(name: "with_watch_providers", value: providerIds.map { "\($0)" }.joined(separator: "|")))
                 items.append(URLQueryItem(name: "watch_region", value: region))
@@ -217,8 +234,33 @@ enum TMDBEndpoint: Sendable {
             if let runtime = minimumRuntime {
                 items.append(URLQueryItem(name: "with_runtime.gte", value: "\(runtime)"))
             }
-        case .movieRecommendations(_, let page):
+        case .movieRecommendations(_, let page), .movieSimilar(_, let page):
             items.append(URLQueryItem(name: "page", value: "\(page)"))
+        case .discoverByTaste(let genreIds, let peopleIds, let excludedGenreIds, let minVote, let minVoteCount, let minimumYear, let page):
+            items.append(contentsOf: [
+                URLQueryItem(name: "page", value: "\(page)"),
+                // Weighted rating rather than raw popularity — the engine is
+                // looking for films this person will love, not the ones
+                // everyone is streaming this week.
+                URLQueryItem(name: "sort_by", value: "vote_average.desc"),
+                URLQueryItem(name: "vote_average.gte", value: String(format: "%.1f", minVote)),
+                URLQueryItem(name: "vote_count.gte", value: "\(minVoteCount)"),
+                URLQueryItem(name: "include_adult", value: "false"),
+                URLQueryItem(name: "include_video", value: "false")
+            ])
+            // Comma-joined people = AND. We want any of them, so use `|`.
+            if !peopleIds.isEmpty {
+                items.append(URLQueryItem(name: "with_people", value: peopleIds.map { "\($0)" }.joined(separator: "|")))
+            }
+            if !genreIds.isEmpty {
+                items.append(URLQueryItem(name: "with_genres", value: genreIds.map { "\($0)" }.joined(separator: "|")))
+            }
+            if !excludedGenreIds.isEmpty {
+                items.append(URLQueryItem(name: "without_genres", value: excludedGenreIds.map { "\($0)" }.joined(separator: ",")))
+            }
+            if let minimumYear {
+                items.append(URLQueryItem(name: "primary_release_date.gte", value: "\(minimumYear)-01-01"))
+            }
         case .movieImages:
             // TMDB's /movie/{id}/images returns all available posters in every
             // language. Ask for English + untagged (no lang) so we get the

@@ -320,6 +320,9 @@ struct MovieNightLobbyView: View {
                                 if filters.excludeShorts {
                                     filterPill(icon: "timer", value: "No Shorts")
                                 }
+                                if filters.includeForeignLanguage {
+                                    filterPill(icon: "globe", value: "World Cinema")
+                                }
                             }
                         }
                     }
@@ -562,6 +565,15 @@ struct EditSessionSettingsSheet: View {
                                     HStack(spacing: FFSpacing.sm) {
                                         Image(systemName: "timer").foregroundColor(FFColors.goldPrimary)
                                         Text("Exclude Short Films").font(FFTypography.labelLarge).foregroundColor(FFColors.textPrimary)
+                                    }
+                                }.tint(FFColors.goldPrimary)
+
+                                Divider().background(Color.white.opacity(0.1))
+
+                                Toggle(isOn: $filters.includeForeignLanguage) {
+                                    HStack(spacing: FFSpacing.sm) {
+                                        Image(systemName: "globe").foregroundColor(FFColors.goldPrimary)
+                                        Text("Include World Cinema").font(FFTypography.labelLarge).foregroundColor(FFColors.textPrimary)
                                     }
                                 }.tint(FFColors.goldPrimary)
 

@@ -472,8 +472,15 @@ final class MovieNightViewModel: ObservableObject {
         isDeckLoading = true
         isLoading = true
 
-        // Fetch deck movies in small batches to avoid TMDB rate limits
-        var orderedMovies: [FFMovie] = []
+        // Fetch deck movies in small batches to avoid TMDB rate limits.
+        //
+        // Every participant must end up with a deck of exactly the same length:
+        // "everyone has finished" compares each person's swipe count against
+        // the local deck size, so one client silently dropping a movie that
+        // failed to load would strand the whole party on the waiting screen.
+        // A movie that can't be fetched is retried once and then filled in from
+        // whatever metadata we already have locally.
+        var fetched: [Int: FFMovie] = [:]
         let tmdbIds = session.deckTmdbIds
         let batchSize = 5
 
@@ -485,24 +492,28 @@ final class MovieNightViewModel: ObservableObject {
                 for tmdbId in batch {
                     group.addTask { [weak self] in
                         guard let self else { return (tmdbId, nil) }
+                        if let movie = try? await self.tmdbService.getFullMovie(id: tmdbId) {
+                            return (tmdbId, movie)
+                        }
+                        // One retry — most failures here are transient rate limits.
                         return (tmdbId, try? await self.tmdbService.getFullMovie(id: tmdbId))
                     }
                 }
 
                 for await (tmdbId, movie) in group {
-                    if let movie {
-                        orderedMovies.append(movie)
-                    }
+                    if let movie { fetched[tmdbId] = movie }
                 }
             }
         }
 
-        // Re-sort to match original deck order
-        let idOrder = Dictionary(uniqueKeysWithValues: tmdbIds.enumerated().map { ($0.element, $0.offset) })
-        orderedMovies.sort { (idOrder[$0.tmdbId] ?? 0) < (idOrder[$1.tmdbId] ?? 0) }
-
-        deckMovies = orderedMovies
-        await fetchProviders(for: orderedMovies)
+        // Rebuild in deck order, substituting a local placeholder for anything
+        // TMDB wouldn't give us so the deck length always matches the session.
+        deckMovies = tmdbIds.map { tmdbId in
+            fetched[tmdbId]
+                ?? SeenMoviesService.shared.cachedMovie(for: tmdbId)?.toFFMovie()
+                ?? FFMovie(tmdbId: tmdbId, title: "Unavailable", overview: "")
+        }
+        await fetchProviders(for: deckMovies)
 
         // Restore current card index from existing swipes
         if let userId = authService.currentUser?.id {

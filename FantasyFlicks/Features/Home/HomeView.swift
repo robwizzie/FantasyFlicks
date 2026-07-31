@@ -22,6 +22,7 @@ struct HomeView: View {
     @State private var showWatched = false
     @State private var showWatchlist = false
     @State private var showRatings = false
+    @State private var showForYou = false
 
     // User leagues from Firebase
     private var activeLeagues: [FFLeague] { viewModel.userLeagues }
@@ -50,6 +51,13 @@ struct HomeView: View {
                         // don't have to jump to the Profile tab for every
                         // Diary/Watched/Watchlist/Ratings open.
                         myMoviesHubSection
+
+                        // Personalised picks. Renders nothing until the user
+                        // has rated enough films for it to mean something.
+                        ForYouRow(
+                            onSelect: { selectedMovie = $0 },
+                            onSeeAll: { showForYou = true }
+                        )
 
                         // Other modes (Coming Soon)
                         quickActionsSection
@@ -98,6 +106,9 @@ struct HomeView: View {
             .sheet(isPresented: $showWatched) { WatchedMoviesSheet() }
             .sheet(isPresented: $showWatchlist) { WatchlistView() }
             .sheet(isPresented: $showRatings) { RatingsView() }
+            .navigationDestination(isPresented: $showForYou) {
+                ForYouView()
+            }
             .navigationDestination(isPresented: $showDraftRoom) {
                 if let activeDraft = viewModel.activeDraft {
                     if activeDraft.isOscarMode {

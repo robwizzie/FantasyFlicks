@@ -175,6 +175,41 @@ final class TMDBService {
         return try await networkManager.get(url: url)
     }
 
+    /// Fetch TMDB's "similar movies" list (shared genres and keywords).
+    /// Complements `getRecommendations`, which is behaviour-based — together
+    /// they give the recommendation engine both a content and a collaborative view.
+    func getSimilarMovies(movieId: Int, page: Int = 1) async throws -> TMDBMovieListResponse {
+        guard let url = TMDBEndpoint.movieSimilar(id: movieId, page: page).url() else {
+            throw NetworkError.invalidURL
+        }
+        return try await networkManager.get(url: url)
+    }
+
+    /// Discover movies matching a user's taste profile — their strongest genres
+    /// and/or the people whose work they rate highly, above a quality floor.
+    func discoverByTaste(
+        genreIds: [Int],
+        peopleIds: [Int],
+        excludedGenreIds: [Int] = [],
+        minVote: Double = 6.5,
+        minVoteCount: Int = 200,
+        minimumYear: Int? = nil,
+        page: Int = 1
+    ) async throws -> TMDBMovieListResponse {
+        guard let url = TMDBEndpoint.discoverByTaste(
+            genreIds: genreIds,
+            peopleIds: peopleIds,
+            excludedGenreIds: excludedGenreIds,
+            minVote: minVote,
+            minVoteCount: minVoteCount,
+            minimumYear: minimumYear,
+            page: page
+        ).url() else {
+            throw NetworkError.invalidURL
+        }
+        return try await networkManager.get(url: url)
+    }
+
     /// Fetch watch providers for a movie
     func getWatchProviders(movieId: Int) async throws -> TMDBWatchProvidersResponse {
         guard let url = TMDBEndpoint.watchProviders(movieId: movieId).url() else {
@@ -192,7 +227,8 @@ final class TMDBService {
             minVote: filters.minVoteAverage,
             page: page,
             minimumYear: filters.minimumYear,
-            minimumRuntime: filters.excludeShorts ? 40 : nil
+            minimumRuntime: filters.excludeShorts ? 40 : nil,
+            englishOnly: !filters.includeForeignLanguage
         ).url() else {
             throw NetworkError.invalidURL
         }
@@ -208,7 +244,8 @@ final class TMDBService {
             minVote: filters.minVoteAverage,
             page: page,
             minimumYear: filters.minimumYear,
-            minimumRuntime: filters.excludeShorts ? 40 : nil
+            minimumRuntime: filters.excludeShorts ? 40 : nil,
+            englishOnly: !filters.includeForeignLanguage
         ).url() else {
             throw NetworkError.invalidURL
         }
@@ -224,34 +261,37 @@ final class TMDBService {
         }
     }
 
-    /// Build a Movie Night deck from TMDB based on filters
+    /// Build a Movie Night deck from TMDB based on filters.
+    ///
+    /// - Parameter excludeTmdbIds: movies to keep out of the deck. This is the
+    ///   *complete* exclusion set — the caller decides what it means based on
+    ///   the session's `excludeSeenMode`, so passing an empty set genuinely
+    ///   gives a deck that can include films the user has already watched.
     func buildMovieNightDeck(filters: MovieNightFilters, excludeTmdbIds: Set<Int> = []) async throws -> [FFMovie] {
         var allMovies: [TMDBMovie] = []
-        // Start with the caller's exclude set (seen movies) PLUS the current user's
-        // live seen set so we never miss a movie they just marked watched.
-        var seenIds = excludeTmdbIds.union(SeenMoviesService.shared.seenTmdbIds)
+        var excludedIds = excludeTmdbIds
         let targetSize = filters.deckSize
 
-        // If "include now playing" is OFF, we fetch the now-playing list purely
-        // to build an exclusion set so in-theater movies are filtered out of
-        // ALL other results (discover, trending, classics). Same for trending.
+        // When a source is switched OFF we fetch it anyway, purely to build an
+        // exclusion set — that's the only way to keep in-theater or trending
+        // titles out of the discover and classics results too.
         if !filters.includeNowPlaying {
-            let nowPlaying = await safeFetch { try await self.getNowPlayingMovies(page: 1) }
-            for movie in nowPlaying.results { seenIds.insert(movie.id) }
-            // Grab a second page for good measure — now-playing is a short list
-            let page2 = await safeFetch { try await self.getNowPlayingMovies(page: 2) }
-            for movie in page2.results { seenIds.insert(movie.id) }
+            for page in 1...3 {
+                let response = await safeFetch { try await self.getNowPlayingMovies(page: page) }
+                for movie in response.results { excludedIds.insert(movie.id) }
+                if response.totalPages <= page { break }
+            }
         }
         if !filters.includeTrending {
             let trending = await safeFetch { try await self.getTrendingMovies(timeWindow: "week", page: 1) }
-            for movie in trending.results { seenIds.insert(movie.id) }
+            for movie in trending.results { excludedIds.insert(movie.id) }
         }
 
         // 1. Fetch popular movies — this is the primary source, let it throw on failure
         //    so the user sees the real error instead of "no movies found"
         let firstPage = try await discoverForMovieNight(filters: filters, page: 1)
-        let firstFiltered = firstPage.results.filter { !seenIds.contains($0.id) }
-        for movie in firstFiltered { seenIds.insert(movie.id) }
+        let firstFiltered = firstPage.results.filter { !excludedIds.contains($0.id) }
+        for movie in firstFiltered { excludedIds.insert(movie.id) }
         allMovies.append(contentsOf: firstFiltered)
 
         // Fetch more pages if needed (these can fail silently)
@@ -259,8 +299,8 @@ final class TMDBService {
             if allMovies.count >= targetSize * 2 { break }
             if firstPage.totalPages < page { break }
             let response = await safeFetch { try await self.discoverForMovieNight(filters: filters, page: page) }
-            let filtered = response.results.filter { !seenIds.contains($0.id) }
-            for movie in filtered { seenIds.insert(movie.id) }
+            let filtered = response.results.filter { !excludedIds.contains($0.id) }
+            for movie in filtered { excludedIds.insert(movie.id) }
             allMovies.append(contentsOf: filtered)
         }
 
@@ -268,33 +308,28 @@ final class TMDBService {
         for page in 1...3 {
             if allMovies.count >= targetSize * 3 { break }
             let response = await safeFetch { try await self.discoverClassics(filters: filters, page: page) }
-            let filtered = response.results.filter { !seenIds.contains($0.id) }
-            for movie in filtered { seenIds.insert(movie.id) }
+            let filtered = response.results.filter { !excludedIds.contains($0.id) }
+            for movie in filtered { excludedIds.insert(movie.id) }
             allMovies.append(contentsOf: filtered)
             if response.totalPages <= page { break }
         }
 
-        // 3. Optionally top up from trending (only when trending is allowed
-        //    and we didn't use it as an exclusion set above).
+        // 3/4. Top up from trending and now-playing. These come from list
+        //      endpoints that ignore discover's query parameters, so every
+        //      filter has to be re-applied here by hand — otherwise picking
+        //      "Netflix, 2010+, no shorts" still leaks 1970s theatrical titles
+        //      into the deck.
         if allMovies.count < targetSize && filters.includeTrending {
             let response = await safeFetch { try await self.getTrendingMovies(timeWindow: "week", page: 1) }
-            let filtered = response.results.filter { movie in
-                (movie.voteAverage ?? 0) >= filters.minVoteAverage &&
-                !seenIds.contains(movie.id) &&
-                matchesGenreFilter(movie: movie, genreIds: filters.genreIds)
-            }
-            for movie in filtered { seenIds.insert(movie.id) }
+            let filtered = await filterTopUp(response.results, filters: filters, excluding: excludedIds)
+            for movie in filtered { excludedIds.insert(movie.id) }
             allMovies.append(contentsOf: filtered)
         }
 
-        // 4. Optionally top up from now playing (only when now-playing is allowed).
         if allMovies.count < targetSize && filters.includeNowPlaying {
             let response = await safeFetch { try await self.getNowPlayingMovies(page: 1) }
-            let filtered = response.results.filter { movie in
-                (movie.voteAverage ?? 0) >= filters.minVoteAverage &&
-                !seenIds.contains(movie.id) &&
-                matchesGenreFilter(movie: movie, genreIds: filters.genreIds)
-            }
+            let filtered = await filterTopUp(response.results, filters: filters, excluding: excludedIds)
+            for movie in filtered { excludedIds.insert(movie.id) }
             allMovies.append(contentsOf: filtered)
         }
 
@@ -308,11 +343,81 @@ final class TMDBService {
         return deckMovies.map { convertToFFMovie($0) }
     }
 
+    /// Apply the full filter set to results from a list endpoint (trending,
+    /// now playing) that can't express the filters as query parameters.
+    private func filterTopUp(
+        _ movies: [TMDBMovie],
+        filters: MovieNightFilters,
+        excluding excludedIds: Set<Int>
+    ) async -> [TMDBMovie] {
+        let shortlist = movies.filter { movie in
+            guard !excludedIds.contains(movie.id) else { return false }
+            guard (movie.voteAverage ?? 0) >= filters.minVoteAverage else { return false }
+            guard matchesGenreFilter(movie: movie, genreIds: filters.genreIds) else { return false }
+            guard matchesLanguageFilter(movie: movie, filters: filters) else { return false }
+            guard matchesYearFilter(movie: movie, minimumYear: filters.minimumYear) else { return false }
+            return true
+        }
+
+        // Runtime and streaming availability aren't in the list payload, so
+        // they need a per-movie lookup. Only do that when the user actually
+        // asked for one of those filters, and cap the work — this is a top-up
+        // path, not the primary source.
+        let needsRuntimeCheck = filters.excludeShorts
+        let needsProviderCheck = !filters.watchProviderIds.isEmpty
+        guard needsRuntimeCheck || needsProviderCheck else { return shortlist }
+
+        let capped = Array(shortlist.prefix(20))
+        let providerIds = Set(filters.watchProviderIds)
+        let region = filters.watchRegion
+
+        var kept: [TMDBMovie] = []
+        await withTaskGroup(of: (TMDBMovie, Bool).self) { group in
+            for movie in capped {
+                group.addTask { [weak self] in
+                    guard let self else { return (movie, false) }
+
+                    if needsRuntimeCheck {
+                        guard let details = try? await self.getMovieDetails(id: movie.id),
+                              (details.runtime ?? 0) >= 40 else {
+                            return (movie, false)
+                        }
+                    }
+
+                    if needsProviderCheck {
+                        guard let response = try? await self.getWatchProviders(movieId: movie.id),
+                              let flatrate = response.results[region]?.flatrate,
+                              flatrate.contains(where: { providerIds.contains($0.providerId) }) else {
+                            return (movie, false)
+                        }
+                    }
+
+                    return (movie, true)
+                }
+            }
+            for await (movie, passed) in group where passed {
+                kept.append(movie)
+            }
+        }
+        return kept
+    }
+
     /// Check if a movie matches the selected genre filter (empty = all genres pass)
     private func matchesGenreFilter(movie: TMDBMovie, genreIds: [Int]) -> Bool {
         guard !genreIds.isEmpty else { return true }
         guard let movieGenres = movie.genreIds else { return false }
         return !Set(genreIds).isDisjoint(with: Set(movieGenres))
+    }
+
+    private func matchesLanguageFilter(movie: TMDBMovie, filters: MovieNightFilters) -> Bool {
+        guard !filters.includeForeignLanguage else { return true }
+        return (movie.originalLanguage ?? "en") == "en"
+    }
+
+    private func matchesYearFilter(movie: TMDBMovie, minimumYear: Int?) -> Bool {
+        guard let minimumYear else { return true }
+        guard let date = movie.releaseDate else { return false }
+        return Calendar.current.component(.year, from: date) >= minimumYear
     }
 
     /// Fetch every poster TMDB has on file for a movie. Used by the favorites
@@ -324,13 +429,17 @@ final class TMDBService {
         return try await networkManager.get(url: url)
     }
 
-    /// Fetch full movie with details and credits
+    /// Fetch full movie with details and credits.
+    ///
+    /// Details are required; credits are best-effort. A credits hiccup used to
+    /// take the whole movie down with it, which left holes in the Movie Night
+    /// deck — a cast list is nice to have, not a reason to drop the film.
     func getFullMovie(id: Int) async throws -> FFMovie {
         async let detailsTask = getMovieDetails(id: id)
         async let creditsTask = getMovieCredits(id: id)
 
         let details = try await detailsTask
-        let credits = try await creditsTask
+        let credits = try? await creditsTask
 
         // Convert TMDBMovieDetails to TMDBMovie for the converter
         let tmdbMovie = TMDBMovie(
