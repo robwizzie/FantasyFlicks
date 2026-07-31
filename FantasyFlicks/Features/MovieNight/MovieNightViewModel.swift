@@ -26,6 +26,9 @@ final class MovieNightViewModel: ObservableObject {
 
     @Published var isLoading = false
     @Published var error: String?
+    /// Set when the built deck came back smaller than the host asked for, so
+    /// the swipe screen can say why rather than just looking broken.
+    @Published var shortDeckNotice: String?
     @Published var showCelebration = false
     @Published var celebrationMovie: FFMovie?
 
@@ -66,6 +69,9 @@ final class MovieNightViewModel: ObservableObject {
     private var sessionListener: ListenerRegistration?
     private var swipesListener: ListenerRegistration?
     private var isDeckLoading = false  // prevent concurrent loadDeckMovies calls
+    /// Session whose winning match we've already celebrated, so the overlay
+    /// fires once rather than on every results recompute.
+    private var celebratedSessionId: String?
 
     // MARK: - Initialization
 
@@ -216,21 +222,17 @@ final class MovieNightViewModel: ObservableObject {
             let movies = try await tmdbService.buildMovieNightDeck(filters: filters, excludeTmdbIds: excludeIds)
 
             guard !movies.isEmpty else {
-                let genreCount = filters.genreIds.count
-                let providerCount = filters.watchProviderIds.count
-                var hint = "No movies found matching your filters."
-                if genreCount > 0 && providerCount > 0 {
-                    hint += " Try selecting fewer genres or more streaming services."
-                } else if genreCount > 0 {
-                    hint += " Try selecting fewer genres."
-                } else if providerCount > 0 {
-                    hint += " Try adding more streaming services."
-                } else {
-                    hint += " Try lowering the minimum rating."
-                }
-                self.error = hint
+                self.error = Self.emptyDeckHint(for: filters)
                 isLoading = false
                 return
+            }
+
+            // A deck that came back short still works, but the host should know
+            // why before everyone starts swiping through eight cards.
+            if movies.count < filters.deckSize {
+                shortDeckNotice = "Only \(movies.count) \(movies.count == 1 ? "movie matches" : "movies match") your filters. Edit the settings to widen the search, or swipe what's here."
+            } else {
+                shortDeckNotice = nil
             }
 
             // Set deck BEFORE writing to Firestore so listener doesn't trigger loadDeckMovies
@@ -360,8 +362,14 @@ final class MovieNightViewModel: ObservableObject {
             return $0.movie.voteAverage > $1.movie.voteAverage
         }
 
-        // Trigger celebration for top unanimous match
-        if let topResult = results.first, topResult.isUnanimous {
+        // Celebrate the top unanimous match — but only the first time for a
+        // given session. `computeResults` re-runs whenever the deck reloads or
+        // a late swipe arrives, and replaying the confetti every time made
+        // revisiting a finished session feel broken.
+        if let topResult = results.first,
+           topResult.isUnanimous,
+           celebratedSessionId != session.id {
+            celebratedSessionId = session.id
             celebrationMovie = topResult.movie
             showCelebration = true
         }
@@ -381,6 +389,7 @@ final class MovieNightViewModel: ObservableObject {
         participantProgress = [:]
         showCelebration = false
         celebrationMovie = nil
+        celebratedSessionId = nil
 
         // Reload global seen movies (don't clear them)
         seenMovieIds = SeenMoviesService.shared.seenTmdbIds
@@ -472,8 +481,15 @@ final class MovieNightViewModel: ObservableObject {
         isDeckLoading = true
         isLoading = true
 
-        // Fetch deck movies in small batches to avoid TMDB rate limits
-        var orderedMovies: [FFMovie] = []
+        // Fetch deck movies in small batches to avoid TMDB rate limits.
+        //
+        // Every participant must end up with a deck of exactly the same length:
+        // "everyone has finished" compares each person's swipe count against
+        // the local deck size, so one client silently dropping a movie that
+        // failed to load would strand the whole party on the waiting screen.
+        // A movie that can't be fetched is retried once and then filled in from
+        // whatever metadata we already have locally.
+        var fetched: [Int: FFMovie] = [:]
         let tmdbIds = session.deckTmdbIds
         let batchSize = 5
 
@@ -485,24 +501,28 @@ final class MovieNightViewModel: ObservableObject {
                 for tmdbId in batch {
                     group.addTask { [weak self] in
                         guard let self else { return (tmdbId, nil) }
+                        if let movie = try? await self.tmdbService.getFullMovie(id: tmdbId) {
+                            return (tmdbId, movie)
+                        }
+                        // One retry — most failures here are transient rate limits.
                         return (tmdbId, try? await self.tmdbService.getFullMovie(id: tmdbId))
                     }
                 }
 
                 for await (tmdbId, movie) in group {
-                    if let movie {
-                        orderedMovies.append(movie)
-                    }
+                    if let movie { fetched[tmdbId] = movie }
                 }
             }
         }
 
-        // Re-sort to match original deck order
-        let idOrder = Dictionary(uniqueKeysWithValues: tmdbIds.enumerated().map { ($0.element, $0.offset) })
-        orderedMovies.sort { (idOrder[$0.tmdbId] ?? 0) < (idOrder[$1.tmdbId] ?? 0) }
-
-        deckMovies = orderedMovies
-        await fetchProviders(for: orderedMovies)
+        // Rebuild in deck order, substituting a local placeholder for anything
+        // TMDB wouldn't give us so the deck length always matches the session.
+        deckMovies = tmdbIds.map { tmdbId in
+            fetched[tmdbId]
+                ?? SeenMoviesService.shared.cachedMovie(for: tmdbId)?.toFFMovie()
+                ?? FFMovie(tmdbId: tmdbId, title: "Unavailable", overview: "")
+        }
+        await fetchProviders(for: deckMovies)
 
         // Restore current card index from existing swipes
         if let userId = authService.currentUser?.id {
@@ -559,6 +579,46 @@ final class MovieNightViewModel: ObservableObject {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    /// Point the host at whichever filter is most likely strangling the deck,
+    /// narrowest-first, instead of a generic "no movies found".
+    private static func emptyDeckHint(for filters: MovieNightFilters) -> String {
+        var suspects: [String] = []
+
+        if filters.maxCertification != nil {
+            suspects.append("raising the content rating limit")
+        }
+        if filters.maxRuntime != nil {
+            suspects.append("allowing longer films")
+        }
+        if !filters.watchProviderIds.isEmpty {
+            suspects.append(filters.includeRentals
+                            ? "adding more streaming services"
+                            : "including rentals, or adding more services")
+        }
+        if !filters.excludedGenreIds.isEmpty {
+            suspects.append("un-blocking a genre or two")
+        }
+        if filters.genreIds.count > 2 {
+            suspects.append("picking fewer genres")
+        }
+        if filters.minimumYear != nil || filters.maximumYear != nil {
+            suspects.append("widening the era")
+        }
+        if filters.audienceMode == .hiddenGems {
+            suspects.append("switching familiarity off Deep Cuts")
+        }
+        if filters.minVoteAverage >= 7.0 {
+            suspects.append("lowering the minimum rating")
+        }
+
+        guard !suspects.isEmpty else {
+            return "No movies matched. Try lowering the minimum rating or turning on world cinema."
+        }
+
+        let top = suspects.prefix(2).joined(separator: ", or ")
+        return "No movies matched your filters. Try \(top)."
     }
 
     /// Host-initiated "Show Results Now" — bypasses the participant-progress

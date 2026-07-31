@@ -22,6 +22,7 @@ struct HomeView: View {
     @State private var showWatched = false
     @State private var showWatchlist = false
     @State private var showRatings = false
+    @State private var showForYou = false
 
     // User leagues from Firebase
     private var activeLeagues: [FFLeague] { viewModel.userLeagues }
@@ -43,6 +44,19 @@ struct HomeView: View {
                         // Hero section with logo
                         heroSection
 
+                        // First thing a new account sees. Importing a watch
+                        // history is what makes everything else work — Movie
+                        // Night stops suggesting films they've seen, and
+                        // recommendations switch on — so it leads until they
+                        // have some data of their own.
+                        if seenService.count == 0 {
+                            LetterboxdConnectCard(
+                                headline: "Start with your watch history",
+                                message: "Connect Letterboxd to bring across everything you've watched and rated. Movie Night will stop suggesting films you've already seen, and your recommendations will actually know your taste."
+                            )
+                            .padding(.horizontal)
+                        }
+
                         // Movie Night hero CTA
                         movieNightHeroSection
 
@@ -50,6 +64,13 @@ struct HomeView: View {
                         // don't have to jump to the Profile tab for every
                         // Diary/Watched/Watchlist/Ratings open.
                         myMoviesHubSection
+
+                        // Personalised picks. Renders nothing until the user
+                        // has rated enough films for it to mean something.
+                        ForYouRow(
+                            onSelect: { selectedMovie = $0 },
+                            onSeeAll: { showForYou = true }
+                        )
 
                         // Other modes (Coming Soon)
                         quickActionsSection
@@ -98,6 +119,9 @@ struct HomeView: View {
             .sheet(isPresented: $showWatched) { WatchedMoviesSheet() }
             .sheet(isPresented: $showWatchlist) { WatchlistView() }
             .sheet(isPresented: $showRatings) { RatingsView() }
+            .navigationDestination(isPresented: $showForYou) {
+                ForYouView()
+            }
             .navigationDestination(isPresented: $showDraftRoom) {
                 if let activeDraft = viewModel.activeDraft {
                     if activeDraft.isOscarMode {

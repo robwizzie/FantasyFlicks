@@ -289,6 +289,11 @@ struct WatchlistView: View {
                     title: "Nothing saved yet",
                     subtitle: "Search above to add movies to your watchlist"
                 )
+                LetterboxdConnectCard(
+                    headline: "Got a Letterboxd watchlist?",
+                    message: "Connect your account, then import watchlist.csv to bring it over."
+                )
+                .padding(.horizontal)
             } else if filteredOrderedIds.isEmpty {
                 emptyState(
                     icon: "line.horizontal.3.decrease.circle",

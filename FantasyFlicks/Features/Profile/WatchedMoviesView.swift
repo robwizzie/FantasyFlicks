@@ -6,12 +6,12 @@
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct WatchedMoviesSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var seenService = SeenMoviesService.shared
-    @State private var showLetterboxdImporter = false
+    @StateObject private var letterboxd = LetterboxdService.shared
+    @State private var showLetterboxdConnect = false
     @State private var searchText = ""
     @State private var searchResults: [FFMovie] = []
     @State private var isSearching = false
@@ -148,18 +148,8 @@ struct WatchedMoviesSheet: View {
             .sheet(item: $selectedMovie) { movie in
                 NavigationStack { MovieDetailView(movie: movie) }
             }
-            .fileImporter(
-                isPresented: $showLetterboxdImporter,
-                allowedContentTypes: [.commaSeparatedText, .plainText],
-                allowsMultipleSelection: false
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    guard let url = urls.first else { return }
-                    Task { _ = await seenService.importLetterboxd(from: url) }
-                case .failure:
-                    break
-                }
+            .sheet(isPresented: $showLetterboxdConnect) {
+                LetterboxdConnectSheet()
             }
         }
     }
@@ -228,46 +218,40 @@ struct WatchedMoviesSheet: View {
     // MARK: - Letterboxd card
 
     private var letterboxdCard: some View {
-        GlassCard {
-            VStack(spacing: FFSpacing.md) {
+        Button {
+            showLetterboxdConnect = true
+        } label: {
+            GlassCard(goldTint: letterboxd.isConnected) {
                 HStack(spacing: FFSpacing.md) {
-                    Image(systemName: "square.and.arrow.down.fill")
+                    Image(systemName: letterboxd.isConnected ? "checkmark.circle.fill" : "link")
                         .font(.system(size: 22))
-                        .foregroundColor(FFColors.goldPrimary)
+                        .foregroundColor(letterboxd.isConnected ? FFColors.success : FFColors.goldPrimary)
+
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Import from Letterboxd")
+                        Text(letterboxd.isConnected ? "Letterboxd connected" : "Connect Letterboxd")
                             .font(FFTypography.titleSmall)
                             .foregroundColor(FFColors.textPrimary)
-                        Text("Upload your watched.csv")
+                        Text(letterboxd.isConnected
+                             ? "@\(letterboxd.username ?? "") · syncing automatically"
+                             : "Sync watches and ratings, or import your CSVs")
                             .font(FFTypography.caption)
                             .foregroundColor(FFColors.textTertiary)
+                            .lineLimit(1)
                     }
-                    Spacer()
-                }
 
-                GoldButton(
-                    title: seenService.isImporting ? "Importing…" : "Choose CSV File",
-                    icon: "doc.fill",
-                    style: .secondary,
-                    size: .medium,
-                    isLoading: seenService.isImporting,
-                    fullWidth: true
-                ) {
-                    showLetterboxdImporter = true
-                }
-                .disabled(seenService.isImporting)
+                    Spacer(minLength: 0)
 
-                if let count = seenService.lastImportCount, count > 0 {
-                    HStack(spacing: FFSpacing.sm) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(FFColors.success)
-                        Text("Imported \(count) movies")
-                            .font(FFTypography.labelMedium)
-                            .foregroundColor(FFColors.success)
+                    if letterboxd.isSyncing || seenService.isImporting {
+                        InlineLoader(size: 16)
+                    } else {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(FFColors.goldPrimary)
                     }
                 }
             }
         }
+        .buttonStyle(.plain)
         .padding(.horizontal)
     }
 
@@ -300,8 +284,13 @@ struct WatchedMoviesSheet: View {
                 emptyState(
                     icon: "eye.slash",
                     title: "Nothing watched yet",
-                    subtitle: "Search above, import from Letterboxd, or mark movies while swiping"
+                    subtitle: "Search above, or mark movies while swiping"
                 )
+                LetterboxdConnectCard(
+                    headline: "Bring your history across",
+                    message: "Connect Letterboxd and everything you've logged lands here in one step."
+                )
+                .padding(.horizontal)
             } else if filteredOrderedIds.isEmpty {
                 emptyState(
                     icon: "line.horizontal.3.decrease.circle",

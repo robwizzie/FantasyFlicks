@@ -64,6 +64,34 @@ struct MovieNightSwipeView: View {
             progressBar
                 .padding(.bottom, FFSpacing.sm)
 
+            // Explains a short deck up front, so a five-card session reads as a
+            // filter consequence rather than a bug.
+            if let notice = viewModel.shortDeckNotice {
+                HStack(alignment: .top, spacing: FFSpacing.sm) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(FFColors.goldPrimary)
+                    Text(notice)
+                        .font(FFTypography.caption)
+                        .foregroundColor(FFColors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button {
+                        viewModel.shortDeckNotice = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(FFColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(FFSpacing.sm)
+                .background(FFColors.goldPrimary.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: FFCornerRadius.small))
+                .padding(.horizontal)
+                .padding(.bottom, FFSpacing.sm)
+            }
+
             // Card stack — takes up available space
             CardStackView(
                 movies: viewModel.deckMovies,

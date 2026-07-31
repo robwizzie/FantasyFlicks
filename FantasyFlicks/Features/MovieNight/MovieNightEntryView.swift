@@ -9,6 +9,7 @@ import SwiftUI
 
 struct MovieNightEntryView: View {
     @StateObject private var viewModel = MovieNightViewModel()
+    @StateObject private var seenService = SeenMoviesService.shared
     @State private var joinCode = ""
     @State private var showJoinField = false
     @State private var sessionToDelete: MovieNightSession?
@@ -31,6 +32,18 @@ struct MovieNightEntryView: View {
                         // Join code field
                         if showJoinField {
                             joinSection
+                        }
+
+                        // Movie Night is much better once we know what they've
+                        // already seen, so pitch the import before their first
+                        // session rather than after a deck full of rewatches.
+                        if seenService.count == 0 {
+                            LetterboxdConnectCard(
+                                style: .compact,
+                                headline: "Skip films you've seen",
+                                message: "Connect Letterboxd to import your history"
+                            )
+                            .padding(.horizontal)
                         }
 
                         // Recent sessions

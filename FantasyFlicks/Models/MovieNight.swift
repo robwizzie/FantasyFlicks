@@ -86,31 +86,191 @@ enum ExcludeSeenMode: String, Codable, Sendable, CaseIterable, Hashable {
     }
 }
 
+// MARK: - Audience Mode
+
+/// How well-known the deck should be. Maps to TMDB vote-count bounds — the
+/// closest proxy TMDB gives us for "has everyone already heard of this?".
+enum AudienceMode: String, Codable, Sendable, CaseIterable, Hashable {
+    case balanced
+    case crowdPleasers
+    case hiddenGems
+
+    var displayName: String {
+        switch self {
+        case .balanced: return "Balanced"
+        case .crowdPleasers: return "Popular"
+        case .hiddenGems: return "Deep Cuts"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .balanced: return "A mix of the famous and the overlooked"
+        case .crowdPleasers: return "Films most people will recognise"
+        case .hiddenGems: return "Well-loved films that flew under the radar"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .balanced: return "circle.lefthalf.filled"
+        case .crowdPleasers: return "flame.fill"
+        case .hiddenGems: return "sparkle.magnifyingglass"
+        }
+    }
+
+    /// Minimum TMDB vote count. Doubles as a quality floor — a 9.0 with
+    /// 12 votes is noise, not a masterpiece.
+    var minimumVoteCount: Int {
+        switch self {
+        case .balanced: return 200
+        case .crowdPleasers: return 2_000
+        case .hiddenGems: return 150
+        }
+    }
+
+    /// Upper bound, so "Deep Cuts" doesn't just hand back the same blockbusters.
+    var maximumVoteCount: Int? {
+        switch self {
+        case .balanced, .crowdPleasers: return nil
+        case .hiddenGems: return 2_500
+        }
+    }
+}
+
+// MARK: - Content Rating
+
+/// US content rating ceiling. TMDB filters on `certification.lte` with
+/// `certification_country=US`.
+enum ContentRating: String, Codable, Sendable, CaseIterable, Hashable {
+    case g = "G"
+    case pg = "PG"
+    case pg13 = "PG-13"
+    case r = "R"
+
+    var displayName: String { rawValue }
+
+    var subtitle: String {
+        switch self {
+        case .g: return "All ages"
+        case .pg: return "G and PG"
+        case .pg13: return "Up to PG-13"
+        case .r: return "Up to R"
+        }
+    }
+}
+
+// MARK: - Runtime Limit
+
+/// Upper bound on runtime — the single most-requested Movie Night constraint
+/// on a school night.
+enum RuntimeLimit: Int, Codable, Sendable, CaseIterable, Hashable {
+    case ninety = 90
+    case twoHours = 120
+    case twoAndAHalfHours = 150
+
+    var displayName: String {
+        switch self {
+        case .ninety: return "Under 1½ hrs"
+        case .twoHours: return "Under 2 hrs"
+        case .twoAndAHalfHours: return "Under 2½ hrs"
+        }
+    }
+}
+
+// MARK: - Deck Sources
+
+/// Where a slice of the deck comes from.
+///
+/// Every source is a `/discover/movie` query, which is the whole point: the
+/// filters are applied by TMDB on every request. The old build mixed in the
+/// `/trending` and `/now_playing` list endpoints, which silently ignore
+/// discover's parameters, so a deck could come back full of films that
+/// violated the host's filters.
+enum MovieNightDeckSource: String, Sendable, CaseIterable {
+    /// Popular right now, within the filters.
+    case popular
+    /// Highest rated, for depth beyond the popular front page.
+    case acclaimed
+    /// Released in the last 18 months — the "trending" source.
+    case recent
+    /// Still in theaters.
+    case inTheaters
+
+    var sortBy: String {
+        switch self {
+        case .popular, .recent, .inTheaters: return "popularity.desc"
+        case .acclaimed: return "vote_average.desc"
+        }
+    }
+
+    /// Extra vote-count floor on top of the audience mode. Sorting by rating
+    /// without one surfaces obscure films with a handful of perfect scores.
+    var additionalVoteCountFloor: Int? {
+        switch self {
+        case .acclaimed: return 500
+        default: return nil
+        }
+    }
+
+    /// How far back this source reaches, in days. nil means no window.
+    var recencyWindowDays: Int? {
+        switch self {
+        case .recent: return 550        // ~18 months
+        case .inTheaters: return 70     // still on screens
+        default: return nil
+        }
+    }
+
+    /// Restrict to theatrical releases where that's what the source means.
+    var theatricalOnly: Bool { self == .inTheaters }
+}
+
 // MARK: - Filters
 
 struct MovieNightFilters: Codable, Hashable, Sendable {
     var genreIds: [Int]
+    /// Hard "absolutely not tonight" genres. Applied as TMDB `without_genres`,
+    /// so a film only needs to touch one of these to be dropped.
+    var excludedGenreIds: [Int]
     var watchProviderIds: [Int]
     var watchRegion: String
+    /// Widen provider matching past subscription streaming to include rentals
+    /// and digital purchases.
+    var includeRentals: Bool
     var minVoteAverage: Double
+    var audienceMode: AudienceMode
     var includeNowPlaying: Bool
     var includeTrending: Bool
     var deckSize: Int
     var excludeSeenMode: ExcludeSeenMode
     var minimumYear: Int?
+    var maximumYear: Int?
     var excludeShorts: Bool
+    var maxRuntime: RuntimeLimit?
+    var maxCertification: ContentRating?
+    /// When false (the default) the deck is limited to English-language films.
+    /// Turning it on opens up world cinema — Parasite, Spirited Away, Amélie.
+    var includeForeignLanguage: Bool
 
     static let `default` = MovieNightFilters(
         genreIds: [],
+        excludedGenreIds: [],
         watchProviderIds: [],
         watchRegion: "US",
+        includeRentals: false,
         minVoteAverage: 6.0,
+        audienceMode: .balanced,
         includeNowPlaying: true,
         includeTrending: true,
         deckSize: 25,
         excludeSeenMode: .mineOnly,
         minimumYear: nil,
-        excludeShorts: true
+        maximumYear: nil,
+        excludeShorts: true,
+        maxRuntime: nil,
+        maxCertification: nil,
+        includeForeignLanguage: false
     )
 
     enum CodingKeys: String, CodingKey {
@@ -118,22 +278,37 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         case includeNowPlaying, includeTrending, deckSize
         case excludeSeenMovies // legacy boolean key
         case excludeSeenMode, minimumYear, excludeShorts
+        case includeForeignLanguage
+        case excludedGenreIds, includeRentals, audienceMode
+        case maximumYear, maxRuntime, maxCertification
     }
 
-    init(genreIds: [Int], watchProviderIds: [Int], watchRegion: String,
-         minVoteAverage: Double, includeNowPlaying: Bool, includeTrending: Bool,
+    init(genreIds: [Int], excludedGenreIds: [Int] = [], watchProviderIds: [Int],
+         watchRegion: String, includeRentals: Bool = false,
+         minVoteAverage: Double, audienceMode: AudienceMode = .balanced,
+         includeNowPlaying: Bool, includeTrending: Bool,
          deckSize: Int, excludeSeenMode: ExcludeSeenMode = .mineOnly,
-         minimumYear: Int? = nil, excludeShorts: Bool = true) {
+         minimumYear: Int? = nil, maximumYear: Int? = nil,
+         excludeShorts: Bool = true, maxRuntime: RuntimeLimit? = nil,
+         maxCertification: ContentRating? = nil,
+         includeForeignLanguage: Bool = false) {
         self.genreIds = genreIds
+        self.excludedGenreIds = excludedGenreIds
         self.watchProviderIds = watchProviderIds
         self.watchRegion = watchRegion
+        self.includeRentals = includeRentals
         self.minVoteAverage = minVoteAverage
+        self.audienceMode = audienceMode
         self.includeNowPlaying = includeNowPlaying
         self.includeTrending = includeTrending
         self.deckSize = deckSize
         self.excludeSeenMode = excludeSeenMode
         self.minimumYear = minimumYear
+        self.maximumYear = maximumYear
         self.excludeShorts = excludeShorts
+        self.maxRuntime = maxRuntime
+        self.maxCertification = maxCertification
+        self.includeForeignLanguage = includeForeignLanguage
     }
 
     init(from decoder: Decoder) throws {
@@ -147,6 +322,16 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         deckSize = try container.decode(Int.self, forKey: .deckSize)
         minimumYear = try container.decodeIfPresent(Int.self, forKey: .minimumYear)
         excludeShorts = try container.decodeIfPresent(Bool.self, forKey: .excludeShorts) ?? true
+        includeForeignLanguage = try container.decodeIfPresent(Bool.self, forKey: .includeForeignLanguage) ?? false
+
+        // Filters added after the first sessions shipped — all optional so an
+        // in-flight session created by an older build still decodes.
+        excludedGenreIds = try container.decodeIfPresent([Int].self, forKey: .excludedGenreIds) ?? []
+        includeRentals = try container.decodeIfPresent(Bool.self, forKey: .includeRentals) ?? false
+        audienceMode = try container.decodeIfPresent(AudienceMode.self, forKey: .audienceMode) ?? .balanced
+        maximumYear = try container.decodeIfPresent(Int.self, forKey: .maximumYear)
+        maxRuntime = try container.decodeIfPresent(RuntimeLimit.self, forKey: .maxRuntime)
+        maxCertification = try container.decodeIfPresent(ContentRating.self, forKey: .maxCertification)
 
         // Backward compatibility: read new enum or fall back to old boolean
         if let mode = try? container.decode(ExcludeSeenMode.self, forKey: .excludeSeenMode) {
@@ -169,6 +354,64 @@ struct MovieNightFilters: Codable, Hashable, Sendable {
         try container.encode(excludeSeenMode, forKey: .excludeSeenMode)
         try container.encodeIfPresent(minimumYear, forKey: .minimumYear)
         try container.encode(excludeShorts, forKey: .excludeShorts)
+        try container.encode(includeForeignLanguage, forKey: .includeForeignLanguage)
+        try container.encode(excludedGenreIds, forKey: .excludedGenreIds)
+        try container.encode(includeRentals, forKey: .includeRentals)
+        try container.encode(audienceMode, forKey: .audienceMode)
+        try container.encodeIfPresent(maximumYear, forKey: .maximumYear)
+        try container.encodeIfPresent(maxRuntime, forKey: .maxRuntime)
+        try container.encodeIfPresent(maxCertification, forKey: .maxCertification)
+    }
+
+    // MARK: - Summary Helpers
+
+    /// Short labels for every non-default filter, for lobby/review chips.
+    /// Anything the host set should be visible before they commit to a deck.
+    func activeSummaryChips(genreNames: [Int: String] = [:]) -> [(icon: String, text: String)] {
+        var chips: [(icon: String, text: String)] = []
+
+        if !genreIds.isEmpty {
+            let names = genreIds.compactMap { genreNames[$0] }
+            chips.append(("theatermasks.fill", names.isEmpty ? "\(genreIds.count) genres" : names.joined(separator: ", ")))
+        }
+        if !excludedGenreIds.isEmpty {
+            let names = excludedGenreIds.compactMap { genreNames[$0] }
+            chips.append(("nosign", "No " + (names.isEmpty ? "\(excludedGenreIds.count) genres" : names.joined(separator: ", "))))
+        }
+        if !watchProviderIds.isEmpty {
+            let names = StreamingProvider.allCases
+                .filter { watchProviderIds.contains($0.id) }
+                .map { $0.name }
+            chips.append(("play.tv.fill", names.joined(separator: ", ")))
+            if includeRentals { chips.append(("creditcard.fill", "Rentals OK")) }
+        }
+        if let maxRuntime {
+            chips.append(("timer", maxRuntime.displayName))
+        } else if excludeShorts {
+            chips.append(("timer", "40 min+"))
+        }
+        if let maxCertification {
+            chips.append(("figure.2.and.child.holdinghands", maxCertification.displayName + " and under"))
+        }
+        switch (minimumYear, maximumYear) {
+        case let (min?, max?): chips.append(("calendar", "\(min)–\(max)"))
+        case let (min?, nil): chips.append(("calendar", "\(min)+"))
+        case let (nil, max?): chips.append(("calendar", "Up to \(max)"))
+        case (nil, nil): break
+        }
+        if audienceMode != .balanced {
+            chips.append((audienceMode.iconName, audienceMode.displayName))
+        }
+        if minVoteAverage > 0 {
+            chips.append(("star.fill", String(format: "%.1f+", minVoteAverage)))
+        }
+        if includeForeignLanguage {
+            chips.append(("globe", "World cinema"))
+        }
+        if excludeSeenMode != .none {
+            chips.append(("eye.slash.fill", excludeSeenMode.displayName))
+        }
+        return chips
     }
 }
 

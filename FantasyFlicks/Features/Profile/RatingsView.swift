@@ -142,19 +142,27 @@ struct RatingsView: View {
     // MARK: - Empty
 
     private var emptyState: some View {
-        VStack(spacing: FFSpacing.lg) {
-            Image(systemName: "star")
-                .font(.system(size: 48))
-                .foregroundColor(FFColors.textTertiary)
-            Text("No ratings yet")
-                .font(FFTypography.titleMedium)
-                .foregroundColor(FFColors.textSecondary)
-            Text("Rate movies from the movie detail view or while swiping")
-                .font(FFTypography.bodySmall)
-                .foregroundColor(FFColors.textTertiary)
-                .multilineTextAlignment(.center)
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: FFSpacing.lg) {
+                Image(systemName: "star")
+                    .font(.system(size: 48))
+                    .foregroundColor(FFColors.textTertiary)
+                Text("No ratings yet")
+                    .font(FFTypography.titleMedium)
+                    .foregroundColor(FFColors.textSecondary)
+                Text("Rate movies from the movie detail view or while swiping")
+                    .font(FFTypography.bodySmall)
+                    .foregroundColor(FFColors.textTertiary)
+                    .multilineTextAlignment(.center)
+
+                LetterboxdConnectCard(
+                    headline: "Rated hundreds of films already?",
+                    message: "Connect Letterboxd to bring your ratings over at half-star resolution — that's also what powers your recommendations."
+                )
+                .padding(.top, FFSpacing.md)
+            }
+            .padding()
         }
-        .padding()
     }
 
     // MARK: - Filter

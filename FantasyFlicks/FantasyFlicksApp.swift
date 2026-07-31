@@ -54,6 +54,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UISceneDelegate {
 struct FantasyFlicksApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var authService = AuthenticationService.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -77,6 +78,16 @@ struct FantasyFlicksApp: App {
             .ffTheme()
             .animation(.easeInOut(duration: 0.35), value: authService.isInitializing)
             .animation(.easeInOut(duration: 0.25), value: authService.isAuthenticated)
+            // Pull anything new from a connected Letterboxd account at launch
+            // and each time the app comes forward. The service throttles
+            // itself, so quick app switches don't hammer the feed.
+            .task {
+                await LetterboxdService.shared.syncIfDue()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .active else { return }
+                Task { await LetterboxdService.shared.syncIfDue() }
+            }
         }
     }
 }

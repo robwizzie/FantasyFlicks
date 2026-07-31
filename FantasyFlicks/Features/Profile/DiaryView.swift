@@ -60,19 +60,27 @@ struct DiaryView: View {
                 FFColors.backgroundDark.ignoresSafeArea()
 
                 if seenService.diary.isEmpty {
-                    VStack(spacing: FFSpacing.lg) {
-                        Image(systemName: "book.closed")
-                            .font(.system(size: 48))
-                            .foregroundColor(FFColors.textTertiary)
-                        Text("No diary entries yet")
-                            .font(FFTypography.titleMedium)
-                            .foregroundColor(FFColors.textSecondary)
-                        Text("Log movies from the Movies tab to start your diary")
-                            .font(FFTypography.bodySmall)
-                            .foregroundColor(FFColors.textTertiary)
-                            .multilineTextAlignment(.center)
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: FFSpacing.lg) {
+                            Image(systemName: "book.closed")
+                                .font(.system(size: 48))
+                                .foregroundColor(FFColors.textTertiary)
+                            Text("No diary entries yet")
+                                .font(FFTypography.titleMedium)
+                                .foregroundColor(FFColors.textSecondary)
+                            Text("Log movies from the Movies tab to start your diary")
+                                .font(FFTypography.bodySmall)
+                                .foregroundColor(FFColors.textTertiary)
+                                .multilineTextAlignment(.center)
+
+                            LetterboxdConnectCard(
+                                headline: "Already keep a diary?",
+                                message: "Connect Letterboxd and every entry — dates, ratings and reviews — comes across, then stays in sync."
+                            )
+                            .padding(.top, FFSpacing.md)
+                        }
+                        .padding()
                     }
-                    .padding()
                 } else {
                     List {
                         Section {
